@@ -15,6 +15,8 @@ from app.db.session import get_db
 from app.main import app
 from app.modules.auth.dependencies import CurrentUser, get_current_user
 
+pytest_plugins = ["tests.guest_fixtures"]
+
 
 @pytest.fixture()
 def db_session() -> Iterator[Session]:
