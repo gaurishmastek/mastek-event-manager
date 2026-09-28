@@ -11,9 +11,8 @@ type Step = 'password' | 'second-factor';
 
 /**
  * Admin login: password, then a second factor (OTP or TOTP per the spec).
- * Calls `POST /auth/login` and `POST /auth/login/verify`, which are planned but not yet on
- * `main` — see the "Add secure login and roles" thread. This screen is built against that
- * contract so it lights up once the backend lands.
+ * Calls `POST /auth/login` (password, which texts a 6-digit code to the admin's mobile) and
+ * `POST /auth/login/verify` (the code).
  */
 @Component({
   selector: 'app-admin-login',

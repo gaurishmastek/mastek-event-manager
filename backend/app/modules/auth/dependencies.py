@@ -1,37 +1,61 @@
-"""Stand-in for the auth module.
-
-The real implementation (login, tokens, roles) is being built separately. Until it
-lands, every protected route rejects the request, so nothing is ever exposed
-without authentication. Tests override `get_current_user`.
-"""
-
 from collections.abc import Callable
-from dataclasses import dataclass
 
 from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
 
-ROLE_ADMIN = "admin"
-ROLE_SECURITY_OFFICER = "security_officer"
+from app.core.security import decode_access_token
+from app.db.session import get_db
+from app.modules.users.models import Role, User
+from app.modules.users.service import get_user
+
+# Names the events module uses for roles and the signed-in user.
+ROLE_ADMIN = Role.ADMIN
+ROLE_SECURITY_OFFICER = Role.SECURITY_OFFICER
+CurrentUser = User
+
+_bearer = HTTPBearer(auto_error=False)
+
+_UNAUTHENTICATED = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="Not authenticated",
+    headers={"WWW-Authenticate": "Bearer"},
+)
 
 
-@dataclass(frozen=True)
-class CurrentUser:
-    id: int
-    role: str
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> User:
+    if credentials is None:
+        raise _UNAUTHENTICATED
+    claims = decode_access_token(credentials.credentials)
+    if claims is None:
+        raise _UNAUTHENTICATED
+    try:
+        user_id = int(claims["sub"])
+    except (TypeError, ValueError):
+        raise _UNAUTHENTICATED from None
+    # The role in the token is informational; permissions come from the database so a
+    # role change, deactivation or deletion takes effect on the very next request.
+    user = get_user(db, user_id)
+    if user is None or not user.is_active:
+        raise _UNAUTHENTICATED
+    # Logging out bumps the session version, which revokes every token issued before it.
+    if claims["sv"] != user.session_version:
+        raise _UNAUTHENTICATED
+    return user
 
 
-def get_current_user() -> CurrentUser:
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Not authenticated",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+def require_roles(*roles: Role) -> Callable[..., User]:
+    allowed = frozenset(roles)
 
-
-def require_roles(*roles: str) -> Callable[..., CurrentUser]:
-    def dependency(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-        if user.role not in roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    def dependency(user: User = Depends(get_current_user)) -> User:
+        if user.role not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to perform this action",
+            )
         return user
 
     return dependency

@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
@@ -33,7 +33,7 @@ def _to_utc_naive(value: datetime) -> datetime:
     """Require an explicit timezone and store everything as naive UTC."""
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("must include a timezone offset, e.g. 2026-10-20T18:00:00+05:30")
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 Title = Annotated[str, Field(min_length=3, max_length=TITLE_MAX), AfterValidator(_clean_single_line)]

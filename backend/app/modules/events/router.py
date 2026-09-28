@@ -8,6 +8,7 @@ from app.modules.auth.dependencies import ROLE_ADMIN, ROLE_SECURITY_OFFICER, Cur
 from app.modules.events.repository import EventRepository
 from app.modules.events.schemas import EventCreate, EventPage, EventRead, EventUpdate
 from app.modules.events.service import EventNotFoundError, EventService, EventValidationError
+from app.modules.users.service import get_user
 
 # Only admins manage events. Security officers can read the events they are assigned to,
 # which the service enforces in the query.
@@ -25,6 +26,7 @@ Service = Annotated[EventService, Depends(get_event_service)]
 Reader = Annotated[CurrentUser, Depends(require_roles(*READ_ROLES))]
 Writer = Annotated[CurrentUser, Depends(require_roles(*WRITE_ROLES))]
 EventId = Annotated[int, Path(ge=1, le=2_147_483_647)]
+UserId = Annotated[int, Path(ge=1, le=2_147_483_647)]
 
 
 def _not_found() -> HTTPException:
@@ -80,4 +82,38 @@ def delete_event(event_id: EventId, service: Service, user: Writer) -> Response:
         service.delete(event_id, actor_id=user.id)
     except EventNotFoundError as exc:
         raise _not_found() from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{event_id}/officers", response_model=list[int])
+def list_officers(event_id: EventId, service: Service, _: Writer) -> list[int]:
+    """User ids of the security officers assigned to the event."""
+    try:
+        return service.list_officer_ids(event_id)
+    except EventNotFoundError as exc:
+        raise _not_found() from exc
+
+
+@router.put("/{event_id}/officers/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def assign_officer(
+    event_id: EventId, user_id: UserId, service: Service, user: Writer, db: Annotated[Session, Depends(get_db)]
+) -> Response:
+    officer = get_user(db, user_id)
+    if officer is None or not officer.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if officer.role != ROLE_SECURITY_OFFICER:
+        raise HTTPException(status_code=422, detail="Only security officers can be assigned to an event")
+    try:
+        service.assign_officer(event_id, user_id, actor_id=user.id)
+    except EventNotFoundError as exc:
+        raise _not_found() from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/{event_id}/officers/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def unassign_officer(event_id: EventId, user_id: UserId, service: Service, user: Writer) -> Response:
+    try:
+        service.unassign_officer(event_id, user_id, actor_id=user.id)
+    except EventNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found") from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)

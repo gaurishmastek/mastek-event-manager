@@ -6,8 +6,9 @@
 cd backend
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-cp .env.example .env          # set DATABASE_URL to your MySQL database
+cp .env.example .env          # set SECRET_KEY and DATABASE_URL (MySQL)
 alembic upgrade head
+python -m app.cli create-admin --email you@example.com --name "Your Name"
 uvicorn app.main:app --reload
 ```
 
@@ -27,6 +28,9 @@ gets 403.
 | GET | `/events/{id}` | admin, security_officer (assigned only) | 404 if missing, deleted or not assigned |
 | PATCH | `/events/{id}` | admin | Partial update; only sent fields change |
 | DELETE | `/events/{id}` | admin | Soft delete, returns 204 |
+| GET | `/events/{id}/officers` | admin | User ids of assigned security officers |
+| PUT | `/events/{id}/officers/{user_id}` | admin | Assign a security officer, returns 204 |
+| DELETE | `/events/{id}/officers/{user_id}` | admin | Soft-unassign, returns 204 |
 
 Event fields: `title` (3-200 chars, one line), `description` (optional, up to 5000), `location` (2-255 chars, one line),
 `starts_at` (must be in the future), `ends_at` (optional, not before `starts_at`), `capacity` (integer 1-100000).
@@ -42,12 +46,49 @@ Records are never hard-deleted. Every row carries `created_at/by`, `updated_at/b
 Features that must respect capacity (guest registration) should call `EventRepository.get_for_update()` so concurrent
 requests cannot overbook an event.
 
-## Auth
+## Auth and roles
 
-`app/modules/auth/dependencies.py` is a stand-in until the auth module lands: it rejects every request with 401,
-so no route is reachable without real authentication. Tests override `get_current_user`.
-The `officer_events` table is created here with `officer_id` as a plain integer; the foreign key to `users` and the
-admin endpoints to assign officers belong with the users module.
+| Role               | Signs in with                                        | Can do                                                        |
+| ------------------ | ---------------------------------------------------- | ------------------------------------------------------------- |
+| `admin`            | Email and password, then a 6-digit code sent by SMS  | Create staff accounts; manage events; assign officers         |
+| `security_officer` | A 6-digit code sent by SMS to their registered mobile | View and scan only the events they are assigned to            |
+
+Guests do not get accounts; they register through the public guest form.
+
+Create the first admin with `python -m app.cli create-admin --email ... --name ... --mobile ...`. In development set
+`SMS_PROVIDER=console`; sign-in codes are then printed in the backend's terminal.
+
+| Method | Path | Access |
+|---|---|---|
+| POST | `/api/v1/auth/login` | Public. Admin `{email, password}`; texts a code, returns `{challenge_id, resend_available_at}` |
+| POST | `/api/v1/auth/login/verify` | Public. `{challenge_id, code}`; returns `{access_token, token_type, expires_in, user}` |
+| POST | `/api/v1/auth/officer/otp` | Public. `{mobile}`; same 202 answer whether or not the number belongs to an officer |
+| POST | `/api/v1/auth/officer/verify` | Public. `{mobile, code}`; returns a session like `/login/verify`, valid for one shift (8 hours) |
+| POST | `/api/v1/auth/logout` | Signed in. Revokes every token issued to the user so far |
+| GET | `/api/v1/auth/me` | Signed in |
+| GET, POST | `/api/v1/users` | admin. Officers are created with a mobile and no password |
+| GET | `/health` | Public |
+
+Sign-in codes use the same OTP service as guest registration: 5-minute expiry, 5 attempts, a resend cooldown, caps
+per number and per IP, and the daily SMS budget.
+
+Security design:
+
+- **Passwords** are hashed with Argon2id (`argon2-cffi`), salted per user, and rehashed on login when the
+  recommended parameters change. Minimum 12 characters, not all letters or all digits.
+- **Tokens** are short-lived JWT access tokens (HS256; 30 minutes for admins, one 8-hour shift for officers) sent
+  as `Authorization: Bearer`. Logging out bumps the user's session version, which revokes every earlier token.
+- **Permissions are read from the database on every request**, so deactivating a user, deleting them or changing
+  their role takes effect on their next request, even with a still-valid token.
+- **Deny by default.** Every router except auth is mounted behind authentication. Only routes in `PUBLIC_ROUTES`
+  (`app/main.py`) answer without a token, and `tests/test_app.py` fails if any other route does.
+- **Login hardening.** One generic error for unknown email, wrong password, locked or disabled account; a dummy hash
+  check keeps timing the same for unknown emails; the account locks for 15 minutes after 5 failed attempts.
+- Responses carry `nosniff`, `DENY` framing, `no-referrer` and `no-store` headers (plus HSTS in production), and
+  the API docs are off when `ENVIRONMENT=production`.
+
+Not yet covered: refresh tokens (the frontend keeps the access token in memory, so a page reload signs out) and
+per-IP rate limiting on the password step, which is best done at the reverse proxy.
 
 ## Guest registration (public, no login)
 
@@ -97,6 +138,6 @@ admit it; a unique index on `check_ins.registration_id` backs this up. Every sca
 `scan_attempts` (never the token itself).
 
 Admins can scan for any event. Security officers can only scan for, and list entries of, events they are assigned
-to in `officer_events`; any other event returns 404.
+to (see `/events/{id}/officers`); any other event returns 404.
 
 Production refuses to start with the development `SECRET_KEY` or `PII_ENCRYPTION_KEY`, or with `SMS_PROVIDER=console`.

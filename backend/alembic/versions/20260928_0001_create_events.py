@@ -1,15 +1,16 @@
 """create events and officer_events tables
 
 Revision ID: 20260928_0001
-Revises:
+Revises: 20260928_0000
 Create Date: 2026-09-28
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "20260928_0001"
-down_revision = None
+down_revision = "20260928_0000"
 branch_labels = None
 depends_on = None
 
@@ -39,7 +40,7 @@ def upgrade() -> None:
     op.create_table(
         "officer_events",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("officer_id", sa.Integer(), nullable=False),
+        sa.Column("officer_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("event_id", sa.Integer(), sa.ForeignKey("events.id"), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),

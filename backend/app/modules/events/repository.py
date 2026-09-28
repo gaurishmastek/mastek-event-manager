@@ -1,10 +1,16 @@
+# Postponed annotations: the `list` method would otherwise shadow the builtin in later signatures.
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TypeVar
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.modules.events.models import Event, OfficerEvent
+
+Row = TypeVar("Row", Event, OfficerEvent)
 
 
 def _escape_like(term: str) -> str:
@@ -66,13 +72,25 @@ class EventRepository:
         stmt = select(Event).where(*conditions).order_by(Event.starts_at, Event.id).limit(limit).offset(offset)
         return list(self.db.scalars(stmt)), total
 
-    def add(self, event: Event) -> Event:
-        self.db.add(event)
+    def add(self, row: Row) -> Row:
+        self.db.add(row)
         self.db.commit()
-        self.db.refresh(event)
-        return event
+        self.db.refresh(row)
+        return row
 
-    def save(self, event: Event) -> Event:
+    def save(self, row: Row) -> Row:
         self.db.commit()
-        self.db.refresh(event)
-        return event
+        self.db.refresh(row)
+        return row
+
+    def get_assignment(self, event_id: int, officer_id: int) -> OfficerEvent | None:
+        stmt = select(OfficerEvent).where(OfficerEvent.event_id == event_id, OfficerEvent.officer_id == officer_id)
+        return self.db.scalars(stmt).first()
+
+    def list_officer_ids(self, event_id: int) -> list[int]:
+        stmt = (
+            select(OfficerEvent.officer_id)
+            .where(OfficerEvent.event_id == event_id, OfficerEvent.deleted_at.is_(None))
+            .order_by(OfficerEvent.officer_id)
+        )
+        return list(self.db.scalars(stmt))

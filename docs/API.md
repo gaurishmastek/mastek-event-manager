@@ -5,10 +5,24 @@ registration/OTP/QR, and gate-scanning routers only. This file did not exist in 
 FastAPI, all routes mounted under `/api/v1` (`app/main.py`). JSON only. Validation errors return
 `422` (Pydantic); all request models use `extra="forbid"`.
 
-Authentication is **not implemented**: every route below marked "admin" or "officer" currently
-returns `401 Not authenticated` for every caller, because `auth/dependencies.get_current_user`
-is a stand-in that always rejects (see [`RBAC.md`](./RBAC.md)). The shapes and rules below are
-otherwise exactly what the code does today.
+Routes marked "admin" or "officer" need `Authorization: Bearer <access_token>` from the staff
+auth endpoints below; see [`RBAC.md`](./RBAC.md) for who can call what.
+
+## Staff auth — `app/modules/auth/router.py`
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/auth/login` | `{email, password}` (admins only) | `200 {challenge_id, resend_available_at}`; texts a 6-digit code. `401` for any wrong/unknown/locked/non-admin account |
+| POST | `/auth/login/verify` | `{challenge_id, code}` | `200 {access_token, token_type, expires_in, user: {id, role, name}}`; `400` for a bad or expired code |
+| POST | `/auth/officer/otp` | `{mobile}` | `202 {resend_available_at}`, the same whether or not the number belongs to an officer; `429` with `Retry-After` when throttled |
+| POST | `/auth/officer/verify` | `{mobile, code}` | Same session shape as `/auth/login/verify`, valid for one shift (`OFFICER_SESSION_MINUTES`, default 8 h) |
+| POST | `/auth/logout` | none | `204`; revokes every token issued to the user so far |
+| GET | `/auth/me` | none | The signed-in user |
+| GET, POST | `/users` | `{email, full_name, mobile, role, password?}` (admin) | Admins must have a password, officers must not; `409` on a duplicate email or mobile |
+
+Sign-in codes use the same `OtpService` as guest registration (purposes `ADMIN_2FA` and
+`OFFICER_LOGIN`), so they share its expiry, attempt limit, cooldown, per-number and per-IP caps
+and daily SMS budget.
 
 ## Events — `app/modules/events/router.py`
 
@@ -63,7 +77,7 @@ behaviour) — FastAPI's default `{"detail": "..."}` body is what callers get to
 
 ## Not yet implemented anywhere
 
-Staff auth endpoints (`/auth/...`), users/officer-assignment management endpoints, event
+Refresh tokens (`/auth/refresh`), editing or deactivating staff accounts, event
 publish/close/cancel actions, guest-list/export/stats endpoints, and the audit-log read endpoint
 — all described in [`event-management.md`](./event-management.md#4-api) as the target API but
 absent from `main`.

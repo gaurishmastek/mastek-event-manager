@@ -1,10 +1,10 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Development-only defaults. Production refuses to start while any of these is still in use.
-_DEV_SECRET_KEY = "dev-only-secret-change-me-0123456789abcdef"
+_DEV_SECRET_KEY = "dev-only-secret-change-me-0123456789abcdef"  # noqa: S105 - refused in production
 _DEV_PII_ENCRYPTION_KEY = "ZGV2LW9ubHktcGlpLWtleS1jaGFuZ2UtbWUtMDEyMzQ="
 
 
@@ -17,9 +17,19 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "production"] = "development"
     database_url: str = "mysql+pymysql://mastek:mastek@localhost:3306/mastek_events"
 
-    # Keys for OTP hashes and keyed lookups (mobile, IP), and for encrypting guest mobiles at rest (Fernet key).
+    # Signs staff access tokens, and keys OTP hashes and keyed lookups (mobile, IP).
+    # Encrypts guest mobiles at rest (Fernet key).
     secret_key: str = _DEV_SECRET_KEY
     pii_encryption_key: str = _DEV_PII_ENCRYPTION_KEY
+
+    # Staff login.
+    access_token_expire_minutes: int = Field(default=30, ge=1, le=24 * 60)
+    # Security officers sign in once per gate shift.
+    officer_session_minutes: int = Field(default=8 * 60, ge=1, le=24 * 60)
+    max_failed_login_attempts: int = Field(default=5, ge=1)
+    lockout_minutes: int = Field(default=15, ge=1)
+    # Comma-separated list of allowed frontend origins.
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:4200"]
 
     # SMS delivery. "console" prints OTPs to stdout for local development and is refused in production.
     sms_provider: Literal["disabled", "console"] = "disabled"
@@ -38,6 +48,13 @@ class Settings(BaseSettings):
     gate_opens_minutes_before_start: int = 180
     gate_closes_hours_after_start_if_no_end: int = 12
 
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
     @model_validator(mode="after")
     def _refuse_unsafe_production_config(self) -> "Settings":
         if self.environment != "production":
@@ -50,5 +67,13 @@ class Settings(BaseSettings):
             raise ValueError("SMS_PROVIDER=console prints OTPs and cannot be used in production")
         return self
 
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
+
 
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    return settings
