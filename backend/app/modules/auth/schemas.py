@@ -1,8 +1,7 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.core.mobile import normalize_indian_mobile
 from app.modules.users.models import Role
 from app.modules.users.schemas import PASSWORD_MAX_LENGTH
 
@@ -13,13 +12,8 @@ class _Input(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class _MobileInput(_Input):
-    mobile: str = Field(min_length=10, max_length=20)
-
-    @field_validator("mobile")
-    @classmethod
-    def normalize_mobile(cls, value: str) -> str:
-        return normalize_indian_mobile(value)
+class _EmailInput(_Input):
+    email: EmailStr
 
 
 class LoginRequest(_Input):
@@ -37,7 +31,7 @@ class LoginVerifyRequest(_Input):
     code: str = OTP_CODE
 
 
-class OfficerOtpRequest(_MobileInput):
+class OfficerOtpRequest(_EmailInput):
     pass
 
 
@@ -45,7 +39,7 @@ class OfficerOtpSent(BaseModel):
     resend_available_at: datetime
 
 
-class OfficerVerifyRequest(_MobileInput):
+class OfficerVerifyRequest(_EmailInput):
     code: str = OTP_CODE
 
 

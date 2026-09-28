@@ -1,15 +1,15 @@
 from app.core.config import get_settings
 from app.modules.users.models import Role
-from tests.conftest import PASSWORD, auth_headers, last_code_for, login, make_user, mobile_for, sent_codes, sign_in
+from tests.conftest import PASSWORD, auth_headers, last_code_for, login, make_user, sent_codes, sign_in
 
 
-def test_admin_password_step_texts_a_code_and_returns_a_challenge(client, admin):
+def test_admin_password_step_emails_a_code_and_returns_a_challenge(client, admin):
     response = login(client, admin.email)
     assert response.status_code == 200
     body = response.json()
     assert body["challenge_id"]
     assert "access_token" not in body
-    assert sent_codes()[-1][0] == mobile_for(admin.email)
+    assert sent_codes()[-1][0] == admin.email
 
 
 def test_admin_code_step_returns_session_for_the_frontend(client, admin):
@@ -50,33 +50,47 @@ def test_officer_cannot_use_password_login(client, officer):
     assert login(client, officer.email).status_code == 401
 
 
-def test_officer_signs_in_with_sms_code(client, officer):
+def test_officer_signs_in_with_emailed_code(client, officer):
     response = sign_in(client, officer)
     assert response.status_code == 200
     assert response.json()["user"]["role"] == "security_officer"
 
 
-def test_officer_otp_gives_same_answer_for_unknown_numbers(client, officer, admin):
+def test_officer_otp_gives_same_answer_for_unknown_addresses(client, officer, admin):
     sent_codes()
-    unknown = client.post("/api/v1/auth/officer/otp", json={"mobile": "9123456780"})
-    admin_number = client.post("/api/v1/auth/officer/otp", json={"mobile": mobile_for(admin.email)})
-    assert unknown.status_code == admin_number.status_code == 202
+    unknown = client.post("/api/v1/auth/officer/otp", json={"email": "nobody@example.com"})
+    admin_address = client.post("/api/v1/auth/officer/otp", json={"email": admin.email})
+    assert unknown.status_code == admin_address.status_code == 202
     assert sent_codes() == []
 
 
 def test_officer_otp_resend_is_throttled(client, officer):
     sign_in(client, officer)
-    again = client.post("/api/v1/auth/officer/otp", json={"mobile": mobile_for(officer.email)})
+    again = client.post("/api/v1/auth/officer/otp", json={"email": officer.email})
     assert again.status_code == 429
     assert "Retry-After" in again.headers
 
 
 def test_officer_wrong_code_is_rejected(client, officer):
-    mobile = mobile_for(officer.email)
     sent_codes()
-    client.post("/api/v1/auth/officer/otp", json={"mobile": mobile})
+    client.post("/api/v1/auth/officer/otp", json={"email": officer.email})
     wrong = "000000" if last_code_for(officer.email) != "000000" else "111111"
-    assert client.post("/api/v1/auth/officer/verify", json={"mobile": mobile, "code": wrong}).status_code == 400
+    body = {"email": officer.email, "code": wrong}
+    assert client.post("/api/v1/auth/officer/verify", json=body).status_code == 400
+
+
+def test_officer_email_is_case_insensitive(client, officer):
+    sent_codes()
+    assert client.post("/api/v1/auth/officer/otp", json={"email": "OFFICER@Example.com"}).status_code == 202
+    body = {"email": "Officer@example.com", "code": last_code_for(officer.email)}
+    assert client.post("/api/v1/auth/officer/verify", json=body).status_code == 200
+
+
+def test_officer_otp_rejects_malformed_email(client, officer):
+    sent_codes()
+    response = client.post("/api/v1/auth/officer/otp", json={"email": "officer@example.com\r\nBcc: x@evil.test"})
+    assert response.status_code == 422
+    assert sent_codes() == []
 
 
 def test_logout_revokes_the_token(client, admin_headers):
@@ -162,10 +176,11 @@ def test_admin_creates_staff_users(client, admin_headers):
     )
     assert response.status_code == 201
     assert response.json()["email"] == "new.officer@example.com"
-    sent = client.post("/api/v1/auth/officer/otp", json={"mobile": "9123456789"})
+    sent = client.post("/api/v1/auth/officer/otp", json={"email": "new.officer@example.com"})
     assert sent.status_code == 202
+    assert sent_codes()[-1][0] == "new.officer@example.com"
     code = sent_codes()[-1][1]
-    verified = client.post("/api/v1/auth/officer/verify", json={"mobile": "9123456789", "code": code})
+    verified = client.post("/api/v1/auth/officer/verify", json={"email": "new.officer@example.com", "code": code})
     assert verified.status_code == 200
 
 
@@ -177,9 +192,16 @@ def test_officer_accounts_have_no_password_and_admins_need_one(client, admin_hea
     assert client.post("/api/v1/users", headers=admin_headers, json=admin_without_password).status_code == 422
 
 
-def test_duplicate_mobile_is_rejected(client, admin_headers, admin):
-    body = {"email": "other@example.com", "full_name": "Other", "mobile": mobile_for(admin.email)}
-    response = client.post("/api/v1/users", headers=admin_headers, json={**body, "role": "security_officer"})
+def test_mobile_is_optional_for_staff(client, admin_headers):
+    body = {"email": "no.mobile@example.com", "full_name": "No Mobile", "role": "security_officer"}
+    assert client.post("/api/v1/users", headers=admin_headers, json=body).status_code == 201
+
+
+def test_duplicate_mobile_is_rejected(client, admin_headers):
+    body = {"full_name": "Other", "mobile": "9123456789", "role": "security_officer"}
+    first = client.post("/api/v1/users", headers=admin_headers, json={**body, "email": "one@example.com"})
+    assert first.status_code == 201
+    response = client.post("/api/v1/users", headers=admin_headers, json={**body, "email": "two@example.com"})
     assert response.status_code == 409
 
 

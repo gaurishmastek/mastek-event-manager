@@ -6,11 +6,11 @@
         <p class="text-sm text-muted-foreground">Mastek Event Manager · Gate</p>
       </div>
 
-      @if (step() === 'mobile') {
+      @if (step() === 'email') {
         <form class="space-y-4" (ngSubmit)="requestOtp()">
           <div>
-            <label for="mobile" class="mb-1 block text-sm font-medium">Registered mobile</label>
-            <app-input id="mobile" type="tel" inputmode="numeric" [maxlength]="10" [ngModel]="mobile()" (ngModelChange)="mobile.set($event)" name="mobile" />
+            <label for="email" class="mb-1 block text-sm font-medium">Registered email</label>
+            <app-input id="email" type="email" [maxlength]="254" [ngModel]="email()" (ngModelChange)="email.set($event)" name="email" />
           </div>
           <div>
             <label for="event-id" class="mb-1 block text-sm font-medium">Event ID for this gate</label>
@@ -25,6 +25,7 @@
         <form class="space-y-4" (ngSubmit)="verifyOtp()">
           <div>
             <label for="code" class="mb-1 block text-sm font-medium">One-time code</label>
+            <p class="mb-2 text-xs text-muted-foreground">If {{ email() }} belongs to an officer, a code is on its way there.</p>
             <app-input id="code" inputmode="numeric" [ngModel]="code()" (ngModelChange)="code.set($event)" name="code" />
           </div>
           @if (errorMessage()) {

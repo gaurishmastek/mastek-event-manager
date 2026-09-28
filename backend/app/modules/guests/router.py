@@ -1,4 +1,4 @@
-"""Public guest endpoints. No login: guests prove who they are with an OTP sent to their mobile."""
+"""Public guest endpoints. No login: guests prove who they are with an OTP sent to their email."""
 
 from typing import Annotated
 
@@ -19,12 +19,13 @@ from app.modules.guests.service import (
     EventFullError,
     EventNotFoundError,
     GuestRegistrationService,
+    NoEmailOnRegistrationError,
     OtpSentResult,
     RegistrationClosedError,
     RegistrationNotFoundError,
 )
+from app.modules.notifications.email import EmailSender, get_email_sender
 from app.modules.otp.service import OtpInvalidError, OtpService, OtpThrottledError, OtpUnavailableError
-from app.modules.otp.sms import SmsSender, get_sms_sender
 
 router = APIRouter(prefix="/public", tags=["public: guest registration"])
 
@@ -33,9 +34,9 @@ RegistrationId = Annotated[str, Path(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]
 
 
 def get_guest_service(
-    db: Annotated[Session, Depends(get_db)], sms: Annotated[SmsSender, Depends(get_sms_sender)]
+    db: Annotated[Session, Depends(get_db)], email: Annotated[EmailSender, Depends(get_email_sender)]
 ) -> GuestRegistrationService:
-    return GuestRegistrationService(db, OtpService(db, sms))
+    return GuestRegistrationService(db, OtpService(db, email))
 
 
 Service = Annotated[GuestRegistrationService, Depends(get_guest_service)]
@@ -62,6 +63,8 @@ def _to_http(exc: Exception) -> HTTPException:
             return HTTPException(status.HTTP_409_CONFLICT, "This event is full")
         case AlreadyCheckedInError():
             return HTTPException(status.HTTP_409_CONFLICT, "This pass has already been used to enter the event")
+        case NoEmailOnRegistrationError():
+            return HTTPException(status.HTTP_409_CONFLICT, "Please register again with your email address")
         case OtpThrottledError(retry_after=retry_after):
             return HTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS,
@@ -81,6 +84,7 @@ _SERVICE_ERRORS = (
     RegistrationClosedError,
     EventFullError,
     AlreadyCheckedInError,
+    NoEmailOnRegistrationError,
     OtpThrottledError,
     OtpUnavailableError,
     OtpInvalidError,
@@ -90,7 +94,7 @@ _SERVICE_ERRORS = (
 def _otp_sent(result: OtpSentResult) -> OtpSent:
     return OtpSent(
         registration_id=result.registration.public_id,
-        mobile=result.registration.mobile_masked,
+        email=result.registration.email_masked,
         otp_expires_at=result.otp.expires_at,
         resend_available_at=result.otp.resend_available_at,
     )
@@ -113,7 +117,7 @@ def get_event_for_registration(event_id: EventId, service: Service) -> PublicEve
 def register_guest(
     event_id: EventId, data: RegistrationCreate, request: Request, response: Response, service: Service
 ) -> OtpSent:
-    """Start a registration (or resume one for the same mobile) and send an OTP."""
+    """Start a registration (or resume one for the same email) and send an OTP."""
     _no_store(response)
     try:
         return _otp_sent(service.register(event_id, data, ip=_client_ip(request)))

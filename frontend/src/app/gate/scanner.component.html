@@ -40,7 +40,7 @@
       <app-badge [tone]="toneFor(result.result)">{{ result.result.replace('_', ' ') }}</app-badge>
       <p class="mt-2 text-sm font-medium">{{ result.message }}</p>
       @if (result.guest; as guest) {
-        <p class="text-sm text-muted-foreground">{{ guest.name }} · {{ guest.mobile }}</p>
+        <p class="text-sm text-muted-foreground">{{ guest.name }} · {{ guest.contact }}</p>
       }
     </div>
   }
@@ -48,10 +48,10 @@
   <div>
     <h2 class="mb-2 text-sm font-medium text-muted-foreground">Recent entries</h2>
     <ul class="space-y-2">
-      @for (entry of entries(); track entry.checked_in_at + entry.guest.mobile) {
+      @for (entry of entries(); track entry.checked_in_at + entry.guest.contact) {
         <li class="rounded-md border border-border bg-background px-3 py-2 text-sm">
           <span class="font-medium">{{ entry.guest.name }}</span>
-          <span class="text-muted-foreground"> · {{ entry.guest.mobile }} · {{ entry.checked_in_at | date: 'shortTime' }}</span>
+          <span class="text-muted-foreground"> · {{ entry.guest.contact }} · {{ entry.checked_in_at | date: 'shortTime' }}</span>
         </li>
       } @empty {
         <li class="text-sm text-muted-foreground">No entries yet.</li>

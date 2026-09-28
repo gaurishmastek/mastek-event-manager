@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.crypto import decrypt_pii, encrypt_pii, keyed_hash, token_hash
-from app.core.mobile import mask_mobile
+from app.core.email import mask_email
 from app.db.mixins import utcnow
 from app.modules.events.models import Event
 from app.modules.events.repository import EventRepository
@@ -37,6 +37,10 @@ class AlreadyCheckedInError(Exception):
     pass
 
 
+class NoEmailOnRegistrationError(Exception):
+    """The registration predates email OTPs, so no code can be sent for it."""
+
+
 @dataclass(frozen=True)
 class OtpSentResult:
     registration: Registration
@@ -56,9 +60,9 @@ def registration_closes_at(event: Event) -> datetime:
 
 
 class GuestRegistrationService:
-    """Public guest flow: register -> verify mobile by OTP -> receive a single-use QR pass.
+    """Public guest flow: register -> verify email by OTP -> receive a single-use QR pass.
 
-    A registration only takes a seat once the mobile is verified, so unverified or fake
+    A registration only takes a seat once the email is verified, so unverified or fake
     sign-ups can never fill an event.
     """
 
@@ -75,8 +79,8 @@ class GuestRegistrationService:
 
     def register(self, event_id: int, data: RegistrationCreate, *, ip: str | None) -> OtpSentResult:
         event = self._open_event(event_id)
-        mobile_hash = keyed_hash(data.mobile, purpose="mobile")
-        registration = self.registrations.get_by_event_and_mobile(event.id, mobile_hash)
+        email_hash = keyed_hash(data.email, purpose="email")
+        registration = self.registrations.get_by_event_and_email(event.id, email_hash)
 
         if registration is None:
             self._ensure_seat_available(event)
@@ -85,18 +89,18 @@ class GuestRegistrationService:
                 public_id=str(uuid.uuid4()),
                 event_id=event.id,
                 guest_name=data.guest_name,
-                mobile_hash=mobile_hash,
-                mobile_encrypted=encrypt_pii(data.mobile),
-                mobile_masked=mask_mobile(data.mobile),
+                email_hash=email_hash,
+                email_encrypted=encrypt_pii(data.email),
+                email_masked=mask_email(data.email),
                 status=RegistrationStatus.PENDING_OTP.value,
                 consent_at=now,
             )
             try:
                 self.registrations.add(registration)
             except IntegrityError:
-                # The same mobile registered for this event in a parallel request; continue with that one.
+                # The same email registered for this event in a parallel request; continue with that one.
                 self.db.rollback()
-                registration = self.registrations.get_by_event_and_mobile(event.id, mobile_hash)
+                registration = self.registrations.get_by_event_and_email(event.id, email_hash)
                 if registration is None:
                     raise
         elif registration.status == RegistrationStatus.PENDING_OTP.value:
@@ -149,13 +153,17 @@ class GuestRegistrationService:
             self.db.rollback()
             raise AlreadyCheckedInError
         if registration.status == RegistrationStatus.PENDING_OTP.value:
-            # Don't spend an SMS on a guest who could not get a seat anyway.
+            # Don't spend an email on a guest who could not get a seat anyway.
             self._ensure_seat_available(event)
+        if registration.email_encrypted is None:
+            # Registered by mobile before the switch to email; there is nowhere to send a code.
+            self.db.rollback()
+            raise NoEmailOnRegistrationError
         try:
             issued = self.otp.issue(
                 purpose=GUEST_VERIFY,
                 subject_ref=registration.public_id,
-                mobile=decrypt_pii(registration.mobile_encrypted),
+                email=decrypt_pii(registration.email_encrypted),
                 ip=ip,
             )
         except Exception:

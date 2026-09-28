@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "production"] = "development"
     database_url: str = "mysql+pymysql://mastek:mastek@localhost:3306/mastek_events"
 
-    # Signs staff access tokens, and keys OTP hashes and keyed lookups (mobile, IP).
-    # Encrypts guest mobiles at rest (Fernet key).
+    # Signs staff access tokens, and keys OTP hashes and keyed lookups (email, mobile, IP).
+    # Encrypts guest emails and staff mobiles at rest (Fernet key).
     secret_key: str = _DEV_SECRET_KEY
     pii_encryption_key: str = _DEV_PII_ENCRYPTION_KEY
 
@@ -32,17 +32,26 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed frontend origins.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:4200"]
 
-    # SMS delivery. "console" prints OTPs to stdout for local development and is refused in production.
-    sms_provider: Literal["disabled", "console"] = "disabled"
+    # Email delivery for OTPs and notifications. "smtp" sends through the SMTP server below; "console" prints
+    # messages to stdout for local development and is refused in production.
+    email_provider: Literal["disabled", "console", "smtp"] = "disabled"
+    email_from: str = ""
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str = ""
+    smtp_password: str = ""
+    # starttls (usually port 587), ssl (implicit TLS, usually 465), or none (local test servers only).
+    smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
+    smtp_timeout_seconds: int = Field(default=10, ge=1, le=120)
 
-    # OTP rules and anti-abuse caps (per mobile number, per client IP, and for the whole app per day).
+    # OTP rules and anti-abuse caps (per email address, per client IP, and for the whole app per day).
     otp_ttl_seconds: int = 300
     otp_max_attempts: int = 5
     otp_resend_cooldown_seconds: int = 60
-    otp_max_per_mobile_per_hour: int = 5
-    otp_max_per_mobile_per_day: int = 10
+    otp_max_per_email_per_hour: int = 5
+    otp_max_per_email_per_day: int = 10
     otp_max_per_ip_per_hour: int = 20
-    sms_daily_budget: int = 2000
+    email_daily_budget: int = 2000
 
     # Minutes before an event starts that gate scanning opens, and hours after the start it closes
     # when the event has no end time.
@@ -78,6 +87,12 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
+    def _smtp_needs_a_server(self) -> "Settings":
+        if self.email_provider == "smtp" and not (self.smtp_host and self.email_from):
+            raise ValueError("EMAIL_PROVIDER=smtp needs SMTP_HOST and EMAIL_FROM")
+        return self
+
+    @model_validator(mode="after")
     def _refuse_unsafe_production_config(self) -> "Settings":
         if self.environment != "production":
             return self
@@ -85,8 +100,10 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY must be set to a random value of at least 32 characters in production")
         if self.pii_encryption_key == _DEV_PII_ENCRYPTION_KEY:
             raise ValueError("PII_ENCRYPTION_KEY must be set in production")
-        if self.sms_provider == "console":
-            raise ValueError("SMS_PROVIDER=console prints OTPs and cannot be used in production")
+        if self.email_provider == "console":
+            raise ValueError("EMAIL_PROVIDER=console prints OTPs and cannot be used in production")
+        if self.email_provider == "smtp" and self.smtp_security == "none":
+            raise ValueError("SMTP_SECURITY=none sends OTPs unencrypted and cannot be used in production")
         return self
 
     @property

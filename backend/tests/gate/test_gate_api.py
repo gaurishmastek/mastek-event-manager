@@ -48,7 +48,7 @@ def test_valid_pass_admits_guest_and_records_entry(client, issue_pass, live_even
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["result"] == "admitted"
-    assert body["guest"] == {"name": "Asha Patil", "mobile": "98•••••210"}
+    assert body["guest"] == {"name": "Asha Patil", "contact": "as•••@example.com"}
     assert body["gate"] == "Gate 1"
     check_in = db_session.scalars(select(CheckIn)).one()
     assert (check_in.officer_id, check_in.event_id, check_in.method) == (42, live_event.id, "QR")
@@ -81,7 +81,7 @@ def test_old_pass_stops_working_after_reissue(client, issue_pass, live_event, of
     assert scan(client, live_event.id, new).json()["result"] == "admitted"
 
 
-def test_checked_in_guest_cannot_get_a_new_pass(client, sms, issue_pass, register, live_event, officer):
+def test_checked_in_guest_cannot_get_a_new_pass(client, mailbox, issue_pass, register, live_event, officer):
     token = issue_pass(live_event.id)["qr_token"]
     scan(client, live_event.id, token)
 
@@ -206,9 +206,9 @@ def test_deleted_event_is_404(client, live_event, officer, db_session):
 
 
 def test_entries_lists_checked_in_guests(client, issue_pass, live_event, officer):
-    scan(client, live_event.id, issue_pass(live_event.id, mobile="9000000001", name="Ravi")["qr_token"])
-    scan(client, live_event.id, issue_pass(live_event.id, mobile="9000000002", name="Meera")["qr_token"])
-    issue_pass(live_event.id, mobile="9000000003", name="Not arrived")
+    scan(client, live_event.id, issue_pass(live_event.id, email="guest01@example.com", name="Ravi")["qr_token"])
+    scan(client, live_event.id, issue_pass(live_event.id, email="guest02@example.com", name="Meera")["qr_token"])
+    issue_pass(live_event.id, email="guest03@example.com", name="Not arrived")
 
     response = client.get(f"/api/v1/gate/events/{live_event.id}/entries")
 
@@ -216,7 +216,7 @@ def test_entries_lists_checked_in_guests(client, issue_pass, live_event, officer
     body = response.json()
     assert body["total"] == 2
     assert {item["guest"]["name"] for item in body["items"]} == {"Ravi", "Meera"}
-    assert body["items"][0]["guest"]["mobile"].startswith("90•••••")
+    assert body["items"][0]["guest"]["contact"].startswith("gu•••@")
 
 
 def test_entries_respect_event_scope(client, make_event, officer):

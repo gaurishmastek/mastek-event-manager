@@ -17,7 +17,7 @@ from app.db.models import Base  # noqa: E402
 from app.db.session import get_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.modules.auth.dependencies import get_current_user  # noqa: E402
-from app.modules.otp.sms import get_sms_sender  # noqa: E402
+from app.modules.notifications.email import get_email_sender  # noqa: E402
 from app.modules.users.models import Role, User  # noqa: E402
 from app.modules.users.schemas import UserCreate  # noqa: E402
 from app.modules.users.service import create_user  # noqa: E402
@@ -47,30 +47,20 @@ def client(db: Session) -> Iterator[TestClient]:
     app.dependency_overrides.clear()
 
 
-_mobiles: dict[str, str] = {}
-
-
-def mobile_for(email: str) -> str:
-    """A distinct valid Indian mobile per test user."""
-    return _mobiles.setdefault(email, f"+9198{len(_mobiles):08d}")
-
-
 def make_user(db: Session, email: str, role: Role) -> User:
     password = PASSWORD if role == Role.ADMIN else None
-    data = UserCreate(
-        email=email, full_name=email.split("@")[0], mobile=mobile_for(email), password=password, role=role
-    )
+    data = UserCreate(email=email, full_name=email.split("@")[0], password=password, role=role)
     return create_user(db, data)
 
 
 def sent_codes() -> list[tuple[str, str]]:
-    """Codes sent so far. Installs a capturing SMS fake if the test has not installed one."""
-    from tests.guest_fixtures import FakeSms
+    """(address, code) pairs emailed so far. Installs a capturing fake if the test has not installed one."""
+    from tests.guest_fixtures import FakeMailbox
 
-    if get_sms_sender not in app.dependency_overrides:
-        fake = FakeSms()
-        app.dependency_overrides[get_sms_sender] = lambda: fake
-    return app.dependency_overrides[get_sms_sender]().sent
+    if get_email_sender not in app.dependency_overrides:
+        fake = FakeMailbox()
+        app.dependency_overrides[get_email_sender] = lambda: fake
+    return app.dependency_overrides[get_email_sender]().sent
 
 
 def login(client: TestClient, email: str, password: str = PASSWORD):
@@ -80,8 +70,7 @@ def login(client: TestClient, email: str, password: str = PASSWORD):
 
 
 def last_code_for(email: str) -> str:
-    mobile = mobile_for(email)
-    return [code for number, code in sent_codes() if number == mobile][-1]
+    return [code for address, code in sent_codes() if address == email.lower()][-1]
 
 
 def sign_in(client: TestClient, user: User):
@@ -93,11 +82,10 @@ def sign_in(client: TestClient, user: User):
             "/api/v1/auth/login/verify",
             json={"challenge_id": step1.json()["challenge_id"], "code": last_code_for(user.email)},
         )
-    mobile = mobile_for(user.email)
     sent_codes()
-    step1 = client.post("/api/v1/auth/officer/otp", json={"mobile": mobile})
+    step1 = client.post("/api/v1/auth/officer/otp", json={"email": user.email})
     assert step1.status_code == 202, step1.text
-    return client.post("/api/v1/auth/officer/verify", json={"mobile": mobile, "code": last_code_for(user.email)})
+    return client.post("/api/v1/auth/officer/verify", json={"email": user.email, "code": last_code_for(user.email)})
 
 
 def auth_headers(client: TestClient, user: User) -> dict[str, str]:

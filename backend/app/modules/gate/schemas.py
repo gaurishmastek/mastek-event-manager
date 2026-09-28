@@ -21,7 +21,7 @@ class ScannedGuest(BaseModel):
     """Enough for the officer to compare against the person in front of them (e.g. a forwarded screenshot)."""
 
     name: str
-    mobile: str = Field(description="Masked mobile, e.g. 98•••••210")
+    contact: str = Field(description="Masked email, e.g. as•••@example.com")
 
 
 class ScanResponse(BaseModel):
