@@ -10,6 +10,9 @@ from dataclasses import dataclass
 
 from fastapi import Depends, HTTPException, status
 
+ROLE_ADMIN = "admin"
+ROLE_SECURITY_OFFICER = "security_officer"
+
 
 @dataclass(frozen=True)
 class CurrentUser:

@@ -4,14 +4,15 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, st
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.modules.auth.dependencies import CurrentUser, require_roles
+from app.modules.auth.dependencies import ROLE_ADMIN, ROLE_SECURITY_OFFICER, CurrentUser, require_roles
 from app.modules.events.repository import EventRepository
 from app.modules.events.schemas import EventCreate, EventPage, EventRead, EventUpdate
 from app.modules.events.service import EventNotFoundError, EventService, EventValidationError
 
-# Admins and event managers run events; security officers only need to read them at the gate.
-WRITE_ROLES = ("admin", "event_manager")
-READ_ROLES = (*WRITE_ROLES, "security")
+# Only admins manage events. Security officers can read the events they are assigned to,
+# which the service enforces in the query.
+WRITE_ROLES = (ROLE_ADMIN,)
+READ_ROLES = (ROLE_ADMIN, ROLE_SECURITY_OFFICER)
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -37,13 +38,13 @@ def _unprocessable(exc: EventValidationError) -> HTTPException:
 @router.get("", response_model=EventPage)
 def list_events(
     service: Service,
-    _: Reader,
+    user: Reader,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
     search: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
     upcoming: bool = False,
 ) -> EventPage:
-    items, total = service.list(limit=limit, offset=offset, search=search, upcoming=upcoming)
+    items, total = service.list(viewer=user, limit=limit, offset=offset, search=search, upcoming=upcoming)
     return EventPage(items=items, total=total, limit=limit, offset=offset)
 
 
@@ -56,9 +57,9 @@ def create_event(data: EventCreate, service: Service, user: Writer) -> EventRead
 
 
 @router.get("/{event_id}", response_model=EventRead)
-def get_event(event_id: EventId, service: Service, _: Reader) -> EventRead:
+def get_event(event_id: EventId, service: Service, user: Reader) -> EventRead:
     try:
-        return service.get(event_id)
+        return service.get(event_id, viewer=user)
     except EventNotFoundError as exc:
         raise _not_found() from exc
 

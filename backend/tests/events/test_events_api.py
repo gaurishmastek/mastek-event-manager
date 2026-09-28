@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.modules.events.models import Event
+from app.modules.events.models import Event, OfficerEvent
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -107,7 +107,7 @@ def test_list_upcoming_hides_past_events(client, admin, db_session):
 def test_update_event_changes_only_sent_fields(client, login_as):
     login_as("admin", user_id=7)
     created = create(client)
-    login_as("event_manager", user_id=9)
+    login_as("admin", user_id=9)
 
     response = client.patch(f"/api/v1/events/{created['id']}", json={"capacity": 750, "location": "Hall B"})
 
@@ -250,30 +250,68 @@ def test_unauthenticated_requests_are_rejected(client):
     assert client.delete("/api/v1/events/1").status_code == 401
 
 
-def test_security_officer_can_read_but_not_write(client, login_as):
+def assign(db_session, officer_id: int, event_id: int, *, deleted: bool = False) -> None:
+    link = OfficerEvent(officer_id=officer_id, event_id=event_id)
+    if deleted:
+        link.deleted_at = datetime(2026, 1, 1)
+    db_session.add(link)
+    db_session.commit()
+
+
+def test_officer_sees_only_assigned_events(client, login_as, db_session):
+    login_as("admin")
+    navratri = create(client, title="Navratri Night")
+    diwali = create(client, title="Diwali Mela")
+    holi = create(client, title="Holi Party")
+    assign(db_session, officer_id=50, event_id=navratri["id"])
+    assign(db_session, officer_id=51, event_id=diwali["id"])  # someone else's event
+    assign(db_session, officer_id=50, event_id=holi["id"], deleted=True)  # assignment removed
+    login_as("security_officer", user_id=50)
+
+    body = client.get("/api/v1/events").json()
+
+    assert body["total"] == 1
+    assert [e["title"] for e in body["items"]] == ["Navratri Night"]
+    assert client.get(f"/api/v1/events/{navratri['id']}").status_code == 200
+    # Unassigned events look like they don't exist, so IDs can't be probed.
+    assert client.get(f"/api/v1/events/{diwali['id']}").status_code == 404
+    assert client.get(f"/api/v1/events/{holi['id']}").status_code == 404
+
+
+def test_officer_with_no_assignments_sees_nothing(client, login_as):
+    login_as("admin")
+    create(client)
+    login_as("security_officer", user_id=50)
+
+    assert client.get("/api/v1/events").json() == {"items": [], "total": 0, "limit": 20, "offset": 0}
+
+
+def test_admin_sees_all_events_regardless_of_assignment(client, admin, db_session):
+    first = create(client, title="Navratri Night")
+    create(client, title="Diwali Mela")
+    assign(db_session, officer_id=50, event_id=first["id"])
+
+    assert client.get("/api/v1/events").json()["total"] == 2
+
+
+def test_officer_cannot_write_even_on_assigned_event(client, login_as, db_session):
     login_as("admin")
     created = create(client)
-    login_as("security")
+    assign(db_session, officer_id=50, event_id=created["id"])
+    login_as("security_officer", user_id=50)
 
-    assert client.get("/api/v1/events").status_code == 200
-    assert client.get(f"/api/v1/events/{created['id']}").status_code == 200
     assert client.post("/api/v1/events", json=payload()).status_code == 403
     assert client.patch(f"/api/v1/events/{created['id']}", json={"capacity": 5}).status_code == 403
     assert client.delete(f"/api/v1/events/{created['id']}").status_code == 403
 
+    login_as("admin")
+    assert client.get(f"/api/v1/events/{created['id']}").json() == created
 
-def test_unknown_role_cannot_read(client, login_as):
-    login_as("guest")
+
+@pytest.mark.parametrize("role", ["guest", "event_manager", "security", ""])
+def test_other_roles_are_denied(client, login_as, role):
+    login_as(role)
 
     assert client.get("/api/v1/events").status_code == 403
-
-
-def test_forbidden_write_changes_nothing(client, login_as):
-    login_as("admin")
-    created = create(client)
-    login_as("security")
-
-    client.delete(f"/api/v1/events/{created['id']}")
-
-    login_as("admin")
-    assert client.get(f"/api/v1/events/{created['id']}").status_code == 200
+    assert client.get("/api/v1/events/1").status_code == 403
+    assert client.post("/api/v1/events", json=payload()).status_code == 403

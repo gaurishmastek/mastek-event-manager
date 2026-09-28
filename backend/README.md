@@ -15,15 +15,18 @@ Run the tests (SQLite in memory, no MySQL needed): `pytest`. Lint: `ruff check .
 
 ## Events API
 
-All routes live under `/api/v1/events` and require an authenticated user.
+All routes live under `/api/v1/events` and require an authenticated user. There are two roles: `admin` manages
+events, and `security_officer` can only read the events they are assigned to (rows in `officer_events`). Officer
+scope is applied inside the SQL query, and an unassigned event returns 404 so IDs can't be probed. Any other role
+gets 403.
 
 | Method | Path | Roles | Notes |
 |---|---|---|---|
-| GET | `/events` | admin, event_manager, security | `limit` (1-100, default 20), `offset`, `search` (title, 1-100 chars), `upcoming=true` |
-| POST | `/events` | admin, event_manager | Returns 201 with the event |
-| GET | `/events/{id}` | admin, event_manager, security | 404 if missing or deleted |
-| PATCH | `/events/{id}` | admin, event_manager | Partial update; only sent fields change |
-| DELETE | `/events/{id}` | admin, event_manager | Soft delete, returns 204 |
+| GET | `/events` | admin (all), security_officer (assigned only) | `limit` (1-100, default 20), `offset`, `search` (title, 1-100 chars), `upcoming=true` |
+| POST | `/events` | admin | Returns 201 with the event |
+| GET | `/events/{id}` | admin, security_officer (assigned only) | 404 if missing, deleted or not assigned |
+| PATCH | `/events/{id}` | admin | Partial update; only sent fields change |
+| DELETE | `/events/{id}` | admin | Soft delete, returns 204 |
 
 Event fields: `title` (3-200 chars, one line), `description` (optional, up to 5000), `location` (2-255 chars, one line),
 `starts_at` (must be in the future), `ends_at` (optional, not before `starts_at`), `capacity` (integer 1-100000).
@@ -43,3 +46,5 @@ requests cannot overbook an event.
 
 `app/modules/auth/dependencies.py` is a stand-in until the auth module lands: it rejects every request with 401,
 so no route is reachable without real authentication. Tests override `get_current_user`.
+The `officer_events` table is created here with `officer_id` as a plain integer; the foreign key to `users` and the
+admin endpoints to assign officers belong with the users module.

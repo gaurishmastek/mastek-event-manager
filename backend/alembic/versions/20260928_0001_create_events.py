@@ -1,4 +1,4 @@
-"""create events table
+"""create events and officer_events tables
 
 Revision ID: 20260928_0001
 Revises:
@@ -36,8 +36,29 @@ def upgrade() -> None:
     op.create_index("ix_events_starts_at", "events", ["starts_at"])
     op.create_index("ix_events_deleted_at", "events", ["deleted_at"])
 
+    op.create_table(
+        "officer_events",
+        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column("officer_id", sa.Integer(), nullable=False),
+        sa.Column("event_id", sa.Integer(), sa.ForeignKey("events.id"), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.Column("deleted_at", sa.DateTime(), nullable=True),
+        sa.Column("created_by", sa.Integer(), nullable=True),
+        sa.Column("updated_by", sa.Integer(), nullable=True),
+        sa.Column("deleted_by", sa.Integer(), nullable=True),
+        sa.UniqueConstraint("officer_id", "event_id", name="uq_officer_events_officer_event"),
+    )
+    op.create_index("ix_officer_events_officer_id", "officer_events", ["officer_id"])
+    op.create_index("ix_officer_events_event_id", "officer_events", ["event_id"])
+    op.create_index("ix_officer_events_deleted_at", "officer_events", ["deleted_at"])
+
 
 def downgrade() -> None:
+    op.drop_index("ix_officer_events_deleted_at", table_name="officer_events")
+    op.drop_index("ix_officer_events_event_id", table_name="officer_events")
+    op.drop_index("ix_officer_events_officer_id", table_name="officer_events")
+    op.drop_table("officer_events")
     op.drop_index("ix_events_deleted_at", table_name="events")
     op.drop_index("ix_events_starts_at", table_name="events")
     op.drop_table("events")
