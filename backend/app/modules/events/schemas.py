@@ -2,9 +2,10 @@ import re
 from datetime import UTC, datetime
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.modules.events.models import DEFAULT_MAX_GUESTS_PER_REGISTRATION, MAX_GUESTS_PER_REGISTRATION_CAP
+from app.modules.events.timing import gate_window_for
 
 TITLE_MAX = 200
 LOCATION_MAX = 255
@@ -101,6 +102,16 @@ class EventRead(BaseModel):
     updated_at: datetime
     created_by: int | None
     updated_by: int | None
+
+    @computed_field(description="When the gate starts accepting scans (naive UTC)")
+    @property
+    def gate_opens_at(self) -> datetime:
+        return gate_window_for(self.starts_at, self.ends_at)[0]
+
+    @computed_field(description="When the gate stops accepting scans (naive UTC)")
+    @property
+    def gate_closes_at(self) -> datetime:
+        return gate_window_for(self.starts_at, self.ends_at)[1]
 
 
 class EventPage(BaseModel):

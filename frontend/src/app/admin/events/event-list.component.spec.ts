@@ -20,6 +20,8 @@ const EVENT: EventRead = {
   updated_at: '2026-09-28T10:00:00',
   created_by: 1,
   updated_by: 1,
+  gate_opens_at: '2030-10-20T09:00:00',
+  gate_closes_at: '2030-10-21T00:00:00',
 };
 
 describe('EventListComponent registration link', () => {
@@ -45,7 +47,7 @@ describe('EventListComponent registration link', () => {
     const actions = Array.from(fixture.nativeElement.querySelectorAll('td:last-child a, td:last-child button')).map(
       (node) => (node as HTMLElement).textContent!.trim(),
     );
-    expect(actions).toEqual(['Copy registration link', 'Open', 'Registrations', 'Edit', 'Delete']);
+    expect(actions).toEqual(['Copy registration link', 'Open', 'Registrations', 'Manage security', 'Edit', 'Delete']);
     const open: HTMLAnchorElement = fixture.nativeElement.querySelector('a[target="_blank"]');
     expect(open.href).toBe(link);
     expect(open.rel).toContain('noopener');

@@ -24,7 +24,7 @@ from app.core.security import (
 )
 from app.db.mixins import utcnow
 from app.modules.auth.schemas import SessionResponse, SessionUser
-from app.modules.otp.service import OtpInvalidError, OtpService
+from app.modules.otp.service import OtpInvalidError, OtpService, OtpThrottledError
 from app.modules.users.models import Role, User
 from app.modules.users.service import get_active_user_by_email, get_user
 
@@ -69,11 +69,21 @@ class AuthService:
     # --- security officer: emailed code only--------------------------------------------------
 
     def send_officer_code(self, email: str, *, ip: str | None) -> datetime:
-        """Email a code to a registered officer. Unknown addresses get the same answer and no email."""
+        """Email a code to a registered officer. Unknown addresses get the same answer and no email.
+
+        A throttled request is answered like any other, with a later `resend_available_at` and no email: only real
+        officers can be throttled, so a 429 would tell a caller which addresses belong to officers.
+        """
         officer = self._officer_by_email(email)
         if officer is None:
             return utcnow() + timedelta(seconds=get_settings().otp_resend_cooldown_seconds)
-        issued = self.otp.issue(purpose=OFFICER_LOGIN, subject_ref=_officer_ref(officer.id), email=officer.email, ip=ip)
+        try:
+            issued = self.otp.issue(
+                purpose=OFFICER_LOGIN, subject_ref=_officer_ref(officer.id), email=officer.email, ip=ip
+            )
+        except OtpThrottledError as exc:
+            self.db.rollback()
+            return utcnow() + timedelta(seconds=exc.retry_after)
         self.db.commit()
         return issued.resend_available_at
 

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.crypto import encrypt_pii, keyed_hash
 from app.core.email import normalize_email
 from app.core.security import hash_password
-from app.modules.users.models import User
+from app.modules.users.models import Role, User
 from app.modules.users.schemas import UserCreate
 
 
@@ -23,8 +23,11 @@ def get_user(db: Session, user_id: int) -> User | None:
     return db.scalar(select(User).where(User.id == user_id, User.deleted_at.is_(None)))
 
 
-def list_users(db: Session) -> list[User]:
-    return list(db.scalars(select(User).where(User.deleted_at.is_(None)).order_by(User.id)))
+def list_users(db: Session, *, role: Role | None = None) -> list[User]:
+    stmt = select(User).where(User.deleted_at.is_(None))
+    if role is not None:
+        stmt = stmt.where(User.role == role)
+    return list(db.scalars(stmt.order_by(User.id)))
 
 
 def create_user(db: Session, data: UserCreate, actor_id: int | None = None) -> User:

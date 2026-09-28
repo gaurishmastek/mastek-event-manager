@@ -31,3 +31,5 @@ def test_security_headers_are_set(client):
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Cache-Control"] == "no-store"
+    # The gate scanner may use the camera on this origin only.
+    assert response.headers["Permissions-Policy"].startswith("camera=(self)")

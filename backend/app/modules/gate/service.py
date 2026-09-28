@@ -1,16 +1,16 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.crypto import token_hash
 from app.db.mixins import utcnow
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.events.models import Event
 from app.modules.events.repository import EventRepository
+from app.modules.events.timing import gate_window_for
 from app.modules.gate.access import EventScopePolicy
 from app.modules.gate.models import CheckIn, ScanAttempt, ScanResult
 from app.modules.guests.models import Registration, RegistrationStatus
@@ -29,9 +29,7 @@ class ScanOutcome:
 
 
 def gate_window(event: Event) -> tuple[datetime, datetime]:
-    opens = event.starts_at - timedelta(minutes=settings.gate_opens_minutes_before_start)
-    closes = event.ends_at or event.starts_at + timedelta(hours=settings.gate_closes_hours_after_start_if_no_end)
-    return opens, closes
+    return gate_window_for(event.starts_at, event.ends_at)
 
 
 class GateService:

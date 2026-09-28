@@ -371,3 +371,14 @@ def test_max_guests_must_be_a_small_whole_number(client, admin, value):
     event = create(client)
     patch = client.patch(f"/api/v1/events/{event['id']}", json={"max_guests_per_registration": value})
     assert patch.status_code == 422
+
+
+def test_event_read_includes_the_gate_window(client, admin):
+    starts = datetime(2031, 10, 20, 18, 0, tzinfo=IST)
+    with_end = create(client, starts_at=starts.isoformat(), ends_at=(starts + timedelta(hours=4)).isoformat())
+    without_end = create(client, starts_at=starts.isoformat(), ends_at=None)
+
+    # Defaults: opens 3 hours before the start; closes at the end, or 12 hours after the start.
+    assert with_end["gate_opens_at"] == "2031-10-20T09:30:00"
+    assert with_end["gate_closes_at"] == "2031-10-20T16:30:00"
+    assert without_end["gate_closes_at"] == "2031-10-21T00:30:00"

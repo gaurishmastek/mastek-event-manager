@@ -292,3 +292,112 @@ def test_pending_registration_has_no_pass_to_scan(client, mailbox, register, liv
 
     registration = db_session.scalars(select(Registration)).one()
     assert registration.qr_token_hash is None
+
+
+# --- server-side check-in time, races, token handling ---------------------------------
+
+
+def test_check_in_time_comes_from_the_server(client, issue_pass, live_event, officer, db_session):
+    token = issue_pass(live_event.id)["qr_token"]
+    forged = client.post(
+        f"/api/v1/gate/events/{live_event.id}/scan",
+        json={"token": token, "checked_in_at": "2000-01-01T00:00:00Z"},
+    )
+    assert forged.status_code == 422
+
+    before = utcnow()
+    body = scan(client, live_event.id, token).json()
+    after = utcnow()
+
+    check_in = db_session.scalars(select(CheckIn)).one()
+    assert before <= check_in.checked_in_at <= after
+    assert body["checked_in_at"] == check_in.checked_in_at.isoformat()
+
+
+def test_losing_a_concurrent_scan_reports_the_winners_entry(
+    client, issue_pass, live_event, officer, db_session, monkeypatch
+):
+    """Two gates scan one pass at once: the atomic UPDATE lets one win; the other sees the winner's entry."""
+    from app.modules.guests.repository import RegistrationRepository
+
+    token = issue_pass(live_event.id)["qr_token"]
+    real_check_in = RegistrationRepository.check_in
+
+    def other_gate_wins(self, **kwargs):
+        # The other gate's request commits first; ours then matches no VERIFIED row.
+        assert real_check_in(self, **{**kwargs, "officer_id": 99})
+        registration = db_session.scalars(select(Registration)).one()
+        db_session.add(
+            CheckIn(
+                registration_id=registration.id,
+                event_id=live_event.id,
+                officer_id=99,
+                gate="East gate",
+                checked_in_at=kwargs["at"],
+            )
+        )
+        db_session.commit()
+        return real_check_in(self, **kwargs)
+
+    monkeypatch.setattr(RegistrationRepository, "check_in", other_gate_wins)
+    body = scan(client, live_event.id, token, gate="West gate").json()
+
+    assert body["result"] == "already_checked_in"
+    assert body["gate"] == "East gate"
+    assert len(db_session.scalars(select(CheckIn)).all()) == 1
+
+
+def test_unique_index_is_the_last_guard_against_double_entry(client, issue_pass, live_event, officer, db_session):
+    """Even if the status guard were bypassed, the unique registration_id stops a second check-in row."""
+    token = issue_pass(live_event.id)["qr_token"]
+    scan(client, live_event.id, token)
+    registration = db_session.scalars(select(Registration)).one()
+    registration.status = "VERIFIED"
+    db_session.commit()
+
+    body = scan(client, live_event.id, token).json()
+
+    assert body["result"] != "admitted"
+    assert body["guest"] is None
+    assert len(db_session.scalars(select(CheckIn)).all()) == 1
+
+
+def test_gate_closed_scan_admits_nobody_and_shows_nothing(
+    client, issue_pass, make_event, login_as, assign_officer, db_session
+):
+    event = make_event(starts_in=timedelta(days=2))
+    token = issue_pass(event.id)["qr_token"]
+    assign_officer(event.id)
+    login_as("security_officer", user_id=42)
+
+    body = scan(client, event.id, token).json()
+
+    assert (body["result"], body["guest"], body["checked_in_at"]) == ("gate_closed", None, None)
+    assert db_session.scalars(select(CheckIn)).all() == []
+    assert db_session.scalars(select(Registration)).one().status == "VERIFIED"
+
+
+def test_scan_attempts_never_store_the_raw_token(client, issue_pass, live_event, officer, db_session):
+    token = issue_pass(live_event.id)["qr_token"]
+    scan(client, live_event.id, token)
+    scan(client, live_event.id, "C" * 43)
+
+    for attempt in db_session.scalars(select(ScanAttempt)):
+        assert token not in repr(vars(attempt))
+        assert "C" * 43 not in repr(vars(attempt))
+
+
+def test_removed_assignment_also_hides_entry_history(
+    client, issue_pass, login_as, assign_officer, live_event, db_session
+):
+    token = issue_pass(live_event.id)["qr_token"]
+    (assignment,) = assign_officer(live_event.id, officer_id=7)
+    login_as("security_officer", user_id=7)
+    assert scan(client, live_event.id, token).json()["result"] == "admitted"
+    assert client.get(f"/api/v1/gate/events/{live_event.id}/entries").status_code == 200
+
+    assignment.deleted_at = utcnow()
+    db_session.commit()
+
+    assert client.get(f"/api/v1/gate/events/{live_event.id}/entries").status_code == 404
+    assert client.get(f"/api/v1/events/{live_event.id}").status_code == 404

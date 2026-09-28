@@ -1,0 +1,68 @@
+<div class="mx-auto min-h-screen max-w-md space-y-4 bg-secondary/30 px-4 py-4">
+  <header class="flex items-center justify-between gap-2">
+    <div>
+      <h1 class="text-lg font-semibold">Your events</h1>
+      @if (auth.currentUser(); as user) {
+        <p class="text-xs text-muted-foreground">Signed in as {{ user.name || 'security officer' }}</p>
+      }
+    </div>
+    <app-button variant="outline" (click)="signOut()">Sign out</app-button>
+  </header>
+
+  @if (loading()) {
+    <app-spinner />
+  } @else if (errorMessage()) {
+    <div class="space-y-3 rounded-lg border border-destructive/40 bg-background p-4" role="alert">
+      <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+      <app-button variant="outline" (click)="load()">Try again</app-button>
+    </div>
+  } @else {
+    <ul class="space-y-3">
+      @for (event of events(); track event.id) {
+        <li class="rounded-lg border border-border bg-background p-4" data-testid="assigned-event">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <h2 class="text-base font-semibold">{{ event.title }}</h2>
+              <p class="text-sm text-muted-foreground">{{ event.location }}</p>
+            </div>
+            @switch (status(event)) {
+              @case ('open') {
+                <span class="shrink-0 rounded-full bg-success px-2.5 py-0.5 text-xs font-semibold text-success-foreground">Gate open</span>
+              }
+              @case ('upcoming') {
+                <span class="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-900">Not open yet</span>
+              }
+              @case ('closed') {
+                <span class="shrink-0 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-semibold text-secondary-foreground">Gate closed</span>
+              }
+            }
+          </div>
+          <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
+            <dt class="text-muted-foreground">Starts</dt>
+            <dd>{{ utc(event.starts_at) | date: 'EEE d MMM, h:mm a' : ist }} IST</dd>
+            @if (event.ends_at) {
+              <dt class="text-muted-foreground">Ends</dt>
+              <dd>{{ utc(event.ends_at) | date: 'EEE d MMM, h:mm a' : ist }} IST</dd>
+            }
+            <dt class="text-muted-foreground">Gate</dt>
+            <dd>
+              {{ utc(event.gate_opens_at) | date: 'd MMM, h:mm a' : ist }} –
+              {{ utc(event.gate_closes_at) | date: 'd MMM, h:mm a' : ist }} IST
+            </dd>
+          </dl>
+          <a
+            [routerLink]="['/gate/scan', event.id]"
+            class="mt-3 flex h-12 w-full items-center justify-center rounded-md bg-primary text-base font-medium text-primary-foreground hover:opacity-90"
+            [attr.aria-label]="'Open scanner for ' + event.title"
+            >Open scanner</a
+          >
+        </li>
+      } @empty {
+        <li class="rounded-lg border border-border bg-background p-6 text-center">
+          <p class="text-base font-medium">No events assigned.</p>
+          <p class="mt-1 text-sm text-muted-foreground">Contact an administrator.</p>
+        </li>
+      }
+    </ul>
+  }
+</div>

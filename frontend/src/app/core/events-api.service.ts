@@ -46,4 +46,19 @@ export class EventsApiService {
   delete(id: number) {
     return this.http.delete<void>(`${this.base}/${id}`);
   }
+
+  /** Admin only. User ids of the security officers assigned to the event. */
+  officerIds(eventId: number) {
+    return this.http.get<number[]>(`${this.base}/${eventId}/officers`);
+  }
+
+  /** Admin only. Idempotent; restores a previously removed assignment. */
+  assignOfficer(eventId: number, userId: number) {
+    return this.http.put<void>(`${this.base}/${eventId}/officers/${userId}`, null);
+  }
+
+  /** Admin only. Soft-deletes the assignment; the officer loses access to the event at once. */
+  unassignOfficer(eventId: number, userId: number) {
+    return this.http.delete<void>(`${this.base}/${eventId}/officers/${userId}`);
+  }
 }

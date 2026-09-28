@@ -55,6 +55,12 @@
                   <a [routerLink]="['/admin/events', event.id, 'registrations']" class="text-sm text-primary underline"
                     >Registrations</a
                   >
+                  <a
+                    [routerLink]="['/admin/events', event.id, 'security']"
+                    class="text-sm text-primary underline"
+                    [attr.aria-label]="'Manage security officers for ' + event.title"
+                    >Manage security</a
+                  >
                   <a [routerLink]="['/admin/events', event.id, 'edit']" class="text-sm text-primary underline">Edit</a>
                   <button type="button" class="text-sm text-destructive underline" (click)="remove(event)">Delete</button>
                 </div>

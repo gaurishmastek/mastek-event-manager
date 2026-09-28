@@ -57,6 +57,21 @@ Alembic, `backend/alembic/` — see [`DATABASE.md`](./DATABASE.md) for the list.
 their passes (they count as a party of one). Every schema change must go
 through a migration; there is no `create_all()`/auto-sync path in the app itself.
 
+## HTTPS and the gate camera
+
+The gate scanner uses the phone's camera (`navigator.mediaDevices.getUserMedia`), which browsers only allow on
+secure origins: serve the frontend over **HTTPS** in production. `http://localhost` works during development; a phone
+opening `http://<laptop-ip>:4200` does not get a camera (the scanner says "Camera needs a secure connection") — use an
+HTTPS tunnel or a local certificate for phone testing.
+
+The server that serves the Angular build must send `Permissions-Policy: camera=(self)` and must not add a policy that
+blocks the camera. Keep `X-Frame-Options: DENY` (or `frame-ancestors 'none'`): the scanner is never meant to run in a
+frame.
+
+Browser support: camera scanning works in current Chrome and Edge (Android, desktop), Safari on iOS 14.3+ and macOS,
+and Firefox. Browsers with the native `BarcodeDetector` use it; others load the bundled `@zxing/browser` decoder on
+demand. Officers can type or paste a pass code if no camera is available.
+
 ## What is missing for a real deployment
 
 None of the following exist in the repository yet:

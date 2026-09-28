@@ -34,6 +34,8 @@ SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
     "Cache-Control": "no-store",
+    # The gate scanner needs the camera on our own origin only; nothing may use it from a frame or another origin.
+    "Permissions-Policy": "camera=(self), microphone=(), geolocation=()",
 }
 
 
