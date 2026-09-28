@@ -1,9 +1,8 @@
 # Deployment
 
-Status: reflects `main` as of 2026-09-28 (PRs #1, #2, #4). This file did not exist in the repo
-before. There is currently **no deployment tooling in the repository** — no Dockerfile, no
-docker-compose, no CI/CD workflow. This document covers what exists today (how to run the
-backend locally) and what is still missing before it could be deployed.
+Status: reflects the repository as of 2026-09-28. `vercel.json` deploys the Angular frontend and
+FastAPI backend together on Vercel. MySQL remains an external managed service; there is no
+Dockerfile, docker-compose file, or CI/CD workflow in the repository.
 
 ## Requirements
 
@@ -57,29 +56,33 @@ Alembic, `backend/alembic/` — see [`DATABASE.md`](./DATABASE.md) for the list.
 their passes (they count as a party of one). Every schema change must go
 through a migration; there is no `create_all()`/auto-sync path in the app itself.
 
-## Frontend on Vercel
+## Frontend and API on Vercel
 
-`vercel.json` at the repository root deploys the Angular app in `frontend/` as a static site. Vercel installs and
-builds inside `frontend/`, serves `frontend/dist/frontend/browser` (Angular 19 writes the browser bundle there), and
-rewrites every path except `/api/*` to `index.html` so deep links such as `/admin` or `/register/<id>` load the app. It
+`vercel.json` at the repository root defines two builds:
+
+- `backend/api/index.py` uses the Vercel Python runtime and exports the existing FastAPI `app`.
+- `frontend/package.json` uses Vercel's static builder and serves Angular's
+  `frontend/dist/frontend/browser` output.
+
+The root `requirements.txt` delegates to `backend/requirements.txt` so Vercel installs the same pinned runtime
+dependencies used by local backend development.
+
+Requests under `/api/*` are routed to FastAPI. Static assets are served from the Angular build, and every other path
+falls back to `frontend/index.html` so deep links such as `/admin` or `/register/<id>` load the app. The deployment
 also sends the `Permissions-Policy: camera=(self)` and `X-Frame-Options: DENY` headers the gate scanner needs (see
 below).
 
 Vercel project settings: leave **Root Directory** empty (the repository root) and **Framework Preset** as "Other";
 `vercel.json` overrides the build, install and output settings.
 
-The FastAPI backend and MySQL do not run on Vercel. Host them elsewhere (any container host with MySQL 8), then point
-the frontend at them. The production build calls the relative path `/api/v1`
-(`frontend/src/environments/environment.prod.ts`), so the simplest route is a rewrite added **before** the SPA rewrite
-in `vercel.json`:
+The production frontend calls the relative path `/api/v1` (`frontend/src/environments/environment.prod.ts`), so its
+requests remain on the same Vercel origin and do not require a production CORS entry. Configure the backend variables
+from the table above in every Vercel environment that will run the API. Production startup intentionally fails when
+the secret, encryption, or email configuration is unsafe.
 
-```json
-{ "source": "/api/:path*", "destination": "https://<your-backend-host>/api/:path*" }
-```
-
-Vercel then proxies API calls from the same origin, so no CORS change is needed. Alternatively, set `apiBaseUrl` in
-`environment.prod.ts` to the full backend URL and add the Vercel domain to the backend's `CORS_ORIGINS`. Until either
-is done the pages load but API calls return 404.
+Vercel does not provide the MySQL database used by this application. Set `DATABASE_URL` to a network-accessible
+managed MySQL instance and run `alembic upgrade head` against that database before directing users to a deployment.
+Schema migrations are an explicit release step; the serverless function does not run them during startup.
 
 ## HTTPS and the gate camera
 
@@ -100,14 +103,14 @@ demand. Officers can type or paste a pass code if no camera is available.
 
 None of the following exist in the repository yet:
 
-- A Dockerfile or container image build.
+- A Dockerfile or container image build for non-Vercel deployment.
 - A docker-compose (or equivalent) file to run the app alongside MySQL.
 - A CI workflow (tests, lint, `pip-audit`, `bandit`, `gitleaks`, dependency updates).
 - Reverse-proxy / process-manager configuration (the app currently trusts `request.client.host`
   directly for OTP rate limiting by IP — running behind a proxy needs
   `--proxy-headers --forwarded-allow-ips` on uvicorn, noted as a comment in
   `guests/router.py::_client_ip`, but nothing wires that up yet).
-- Any HTTPS/TLS termination (see [`SECURITY.md`](./SECURITY.md)).
+- Custom HTTPS/TLS termination for non-Vercel deployment (Vercel terminates HTTPS for its deployment domains).
 - A production mail account. Set `EMAIL_PROVIDER=smtp` with the SMTP settings above, and add SPF,
   DKIM and DMARC records on the sending domain so codes do not land in spam.
 - Email delivery is needed before anyone can sign in outside development: admins and officers
