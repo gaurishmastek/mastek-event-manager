@@ -23,10 +23,10 @@ file calls out where current code differs from that spec.
 
 ## Registration and OTP (`app/modules/guests`, `app/modules/otp`)
 
-- Public form fields: `guest_name` (2–100 chars), `mobile` (Indian numbers only, normalized to
-  `+91XXXXXXXXXX`), and `consent` (must be `true`).
-- One registration per `(event, mobile)` pair, enforced by a unique constraint
-  (`uq_registrations_event_mobile`); resubmitting the form for the same mobile while still
+- Public form fields: `guest_name` (2–100 chars), `email` (validated, trimmed, lowercased),
+  and `consent` (must be `true`).
+- One registration per `(event, email)` pair, enforced by a unique constraint
+  (`uq_registrations_event_email`); resubmitting the form for the same email (case-insensitive) while still
   `PENDING_OTP` updates the name/consent time and resends an OTP rather than creating a second
   row.
 - Registration is only accepted while `now < (event.ends_at or event.starts_at)` — there is no
@@ -38,8 +38,8 @@ file calls out where current code differs from that spec.
   fails with "event full".
 - OTP: 6 digits from `secrets`, stored only as an HMAC, default validity 300s
   (`otp_ttl_seconds`), 5 wrong attempts invalidate the code (`otp_max_attempts`), 60s resend
-  cooldown, caps of 5/hour and 10/day per mobile, 20/hour per IP, and a 2000/day app-wide SMS
-  budget — all configurable via `Settings` (`app/core/config.py`). A new OTP invalidates any
+  cooldown, caps of 5/hour and 10/day per email, 20/hour per IP, and a 2000/day app-wide email
+  budget (`EMAIL_DAILY_BUDGET`) — all configurable via `Settings` (`app/core/config.py`). A new OTP invalidates any
   earlier unconsumed one for the same subject. Codes are never included in a response, logged,
   or written anywhere but the HMAC.
 - **Not yet implemented**: a fixed "registration expires N minutes after submission if not
@@ -52,7 +52,7 @@ file calls out where current code differs from that spec.
   later (e.g. a guest who lost their pass) issues a fresh token and immediately replaces the
   stored hash — the previous token no longer matches any registration.
 - The QR code encodes only a 256-bit random token (`secrets.token_urlsafe(32)`) — no guest name,
-  mobile or event id. Only its SHA-256 hash is stored (`registrations.qr_token_hash`, unique).
+  email or event id. Only its SHA-256 hash is stored (`registrations.qr_token_hash`, unique).
 - **Not yet implemented**: a pass-specific validity window (`valid_from`/`valid_until`); gate
   timing is currently computed per-event, not per-pass (see below).
 

@@ -30,10 +30,10 @@ Staff accounts: admins and security officers. Guests never get a row here.
 | `id` | int | PK |
 | `email` | varchar(254) | not null, unique, stored lowercase |
 | `full_name` | varchar(120) | not null |
-| `password_hash` | varchar(255) | not null. Argon2id. Officers get a hash of a random value, since they sign in by SMS code only |
+| `password_hash` | varchar(255) | not null. Argon2id. Officers get a hash of a random value |
 | `role` | enum `admin`, `security_officer` | not null |
-| `mobile_hash` | varchar(64) | unique. HMAC of the mobile, for looking officers up by number |
-| `mobile_encrypted` | varchar(255) | Fernet-encrypted mobile that sign-in codes are sent to |
+| `mobile_hash` | varchar(64) | nullable, unique. HMAC of the mobile (contact info only; deprecated for 2FA) |
+| `mobile_encrypted` | varchar(255) | nullable. Fernet-encrypted mobile (contact info only; deprecated for 2FA) |
 | `is_active` | bool | not null |
 | `session_version` | int | not null. Bumped on logout; access tokens carry it and stop working when it changes |
 | `failed_login_attempts`, `locked_until`, `last_login_at` | int, datetime, datetime | Password lockout and last sign-in |
@@ -71,8 +71,8 @@ Unique: `uq_officer_events_officer_event` on `(officer_id, event_id)`.
 
 ### `registrations` (audited)
 
-A guest's registration for one event. The mobile is stored three ways: hashed for lookup,
-encrypted for re-sending OTPs, masked for display — see [`SECURITY.md`](./SECURITY.md).
+A guest's registration for one event. The email is stored three ways: hashed for lookup,
+encrypted for re-sending OTPs, masked for display — see [`SECURITY.md`](./SECURITY.md). Legacy mobile columns are kept for registrations made before the SMS→email migration.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -80,9 +80,12 @@ encrypted for re-sending OTPs, masked for display — see [`SECURITY.md`](./SECU
 | `public_id` | varchar(36) | UUID4, unique — the id exposed to guests |
 | `event_id` | int | FK → `events.id`, not null |
 | `guest_name` | varchar(100) | not null |
-| `mobile_hash` | varchar(64) | not null — HMAC-SHA256, for lookup/uniqueness |
-| `mobile_encrypted` | varchar(255) | not null — Fernet ciphertext |
-| `mobile_masked` | varchar(20) | not null — display only, e.g. `98•••••210` |
+| `email_hash` | varchar(64) | not null — HMAC-SHA256, for lookup/uniqueness |
+| `email_encrypted` | varchar(512) | not null — Fernet ciphertext |
+| `email_masked` | varchar(260) | not null — display only, e.g. `as•••@example.com` |
+| `mobile_hash` | varchar(64) | nullable — HMAC of legacy mobile (pre-migration registrations only) |
+| `mobile_encrypted` | varchar(255) | nullable — Fernet ciphertext of legacy mobile (pre-migration only) |
+| `mobile_masked` | varchar(20) | nullable — legacy display copy (pre-migration only) |
 | `status` | varchar(20) | `PENDING_OTP` \| `VERIFIED` \| `CHECKED_IN`, default `PENDING_OTP` |
 | `consent_at` | datetime | not null |
 | `verified_at` | datetime | nullable |
@@ -90,7 +93,7 @@ encrypted for re-sending OTPs, masked for display — see [`SECURITY.md`](./SECU
 | `qr_issued_at` | datetime | nullable |
 | `checked_in_at` | datetime | nullable |
 
-Unique: `uq_registrations_event_mobile` on `(event_id, mobile_hash)`. Index:
+Unique: `uq_registrations_event_email` on `(event_id, email_hash)`. Index:
 `ix_registrations_event_status` on `(event_id, status)`.
 
 ### `otp_challenges` (append-only, no `AuditMixin`)
@@ -104,7 +107,7 @@ from.
 | `purpose` | varchar(32) | e.g. `GUEST_VERIFY` |
 | `subject_ref` | varchar(64) | e.g. the registration's `public_id` |
 | `code_hmac` | varchar(64) | not null — the code is never stored in clear |
-| `mobile_hash` | varchar(64) | not null |
+| `recipient_hash` | varchar(64) | not null — HMAC of email address (or legacy mobile) |
 | `ip_hash` | varchar(64) | nullable |
 | `attempts` | int | not null, default 0 |
 | `expires_at` | datetime | not null |
@@ -112,7 +115,7 @@ from.
 | `invalidated_at` | datetime | nullable — set when a newer OTP for the same subject supersedes this one |
 | `created_at`, `updated_at` | datetime | |
 
-Indexes: `(purpose, subject_ref, created_at)`, `(mobile_hash, created_at)`,
+Indexes: `(purpose, subject_ref, created_at)`, `(recipient_hash, created_at)`,
 `(ip_hash, created_at)`, `(created_at)`.
 
 ### `check_ins` (audited)

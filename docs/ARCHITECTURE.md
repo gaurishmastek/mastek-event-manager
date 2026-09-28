@@ -10,10 +10,10 @@ separate services exist yet.
 
 ```text
 backend/app/
-  core/       settings, crypto, mobile-number helpers — shared by every module
+  core/       settings, crypto, email helpers — shared by every module
   db/         SQLAlchemy base, audit/soft-delete mixin, session factory
   modules/
-    auth/     staff sign-in (admin password + SMS code, officer SMS code), tokens, role dependencies
+    auth/     staff sign-in (admin password + email code, officer email code), tokens, role dependencies
     users/    staff accounts (admins and security officers)
     events/   event CRUD, officer-to-event scoping
     guests/   public registration, OTP verification, QR pass issuance
@@ -56,9 +56,9 @@ gate/service.py   --> events/repository.py, gate/access.py     (officer scope)
   `OtpChallenge` and `ScanAttempt` are append-only logs instead (see
   [`DATABASE.md`](./DATABASE.md)) and do not carry the mixin.
 - **No PII on the wire or in the QR code.** The QR pass encodes only a random opaque token
-  (`guests/qr.py::new_pass_token`); the database stores only its SHA-256 hash. Guest mobiles are
+  (`guests/qr.py::new_pass_token`); the database stores only its SHA-256 hash. Guest emails are
   kept three ways — HMAC for lookup/uniqueness, Fernet-encrypted for sending OTPs, and a masked
-  copy for display (`core/crypto.py`, `core/mobile.py`).
+  copy for display (`core/crypto.py`).
 - **Capacity is enforced with a row lock, not a counter column.** There is no
   `registered_count` column on `events`. Seats taken are computed on demand
   (`RegistrationRepository.count_seats_taken`), and `GuestRegistrationService.verify` takes
