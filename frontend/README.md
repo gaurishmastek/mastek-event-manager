@@ -10,6 +10,7 @@ The app calls the backend through the dev proxy in `proxy.conf.json`, which forw
 ```bash
 cd backend
 pip install -r requirements-dev.txt   # first time only
+cp .env.example .env                  # first time only; set DATABASE_URL, leave the two keys empty
 alembic upgrade head                   # first time, and after pulling new migrations
 python -m app.cli create-admin --email you@example.com --name "Your Name" --mobile 98XXXXXXXX   # first time only
 SMS_PROVIDER=console uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
