@@ -44,6 +44,10 @@ class EventRepository:
         stmt = select(Event).where(Event.id == event_id, *_visible(officer_id))
         return self.db.scalars(stmt).first()
 
+    def get_by_public_id(self, public_id: str) -> Event | None:
+        stmt = select(Event).where(Event.public_id == public_id, Event.deleted_at.is_(None))
+        return self.db.scalars(stmt).first()
+
     def get_for_update(self, event_id: int) -> Event | None:
         """Lock the event row until the transaction ends.
 

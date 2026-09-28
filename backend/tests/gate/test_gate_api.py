@@ -48,7 +48,15 @@ def test_valid_pass_admits_guest_and_records_entry(client, issue_pass, live_even
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["result"] == "admitted"
-    assert body["guest"] == {"name": "Asha Patil", "contact": "as•••@example.com"}
+    assert body["guest"] == {
+        "name": "Asha Patil",
+        "contact": "as•••@example.com",
+        "employee_id": "asha.patil",
+        "guest_names": [],
+        "party_size": 1,
+        "email_masked": "as•••@example.com",
+        "mobile_masked": "98•••••210",
+    }
     assert body["gate"] == "Gate 1"
     check_in = db_session.scalars(select(CheckIn)).one()
     assert (check_in.officer_id, check_in.event_id, check_in.method) == (42, live_event.id, "QR")
@@ -223,3 +231,64 @@ def test_entries_respect_event_scope(client, make_event, officer):
     other = make_event()
 
     assert client.get(f"/api/v1/gate/events/{other.id}/entries").status_code == 404
+
+
+# --- employee parties ---------------------------------------------------------
+
+
+def test_one_scan_admits_the_whole_party_and_shows_its_details(client, issue_pass, live_event, officer, db_session):
+    token = issue_pass(live_event.id, guests=["Ravi Patil", "Meera Patil"], employee_id="MT-104")["qr_token"]
+
+    body = scan(client, live_event.id, token).json()
+
+    assert body["result"] == "admitted"
+    guest = body["guest"]
+    assert (guest["employee_id"], guest["name"], guest["party_size"]) == ("MT-104", "Asha Patil", 3)
+    assert guest["guest_names"] == ["Ravi Patil", "Meera Patil"]
+    assert (guest["email_masked"], guest["mobile_masked"]) == ("as•••@example.com", "98•••••210")
+    assert "asha.patil@example.com" not in str(body) and "9876543210" not in str(body)
+    assert len(db_session.scalars(select(CheckIn)).all()) == 1
+
+
+def test_used_party_pass_shows_details_and_original_entry(client, issue_pass, live_event, officer, db_session):
+    token = issue_pass(live_event.id, guests=["Ravi Patil"])["qr_token"]
+    scan(client, live_event.id, token, gate="North gate")
+
+    body = scan(client, live_event.id, token, gate="South gate").json()
+
+    assert body["result"] == "already_checked_in"
+    assert (body["guest"]["party_size"], body["guest"]["guest_names"]) == (2, ["Ravi Patil"])
+    assert body["gate"] == "North gate" and body["checked_in_at"]
+    assert len(db_session.scalars(select(CheckIn)).all()) == 1
+
+
+def test_wrong_event_and_invalid_scans_leak_no_party_details(
+    client, issue_pass, make_event, live_event, login_as, assign_officer
+):
+    other = make_event(starts_in=timedelta(minutes=10))
+    token = issue_pass(other.id, guests=["Ravi Patil"], employee_id="MT-104")["qr_token"]
+    assign_officer(live_event.id)
+    login_as("security_officer", user_id=42)
+
+    for response in (scan(client, live_event.id, token), scan(client, live_event.id, "B" * 43)):
+        assert response.json()["guest"] is None
+        for detail in ("MT-104", "Asha", "Ravi", "•••"):
+            assert detail not in response.text
+
+
+def test_unassigned_officer_learns_nothing_about_the_party(client, issue_pass, make_event, login_as, assign_officer):
+    event = make_event(starts_in=timedelta(minutes=10))
+    token = issue_pass(event.id, guests=["Ravi Patil"])["qr_token"]
+    login_as("security_officer", user_id=43)  # assigned to nothing
+
+    response = scan(client, event.id, token)
+
+    assert response.status_code == 404
+    assert "Ravi" not in response.text and "Asha" not in response.text
+
+
+def test_pending_registration_has_no_pass_to_scan(client, mailbox, register, live_event, officer, db_session):
+    register(live_event.id)
+
+    registration = db_session.scalars(select(Registration)).one()
+    assert registration.qr_token_hash is None

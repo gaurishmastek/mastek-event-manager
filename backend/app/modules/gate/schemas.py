@@ -18,10 +18,18 @@ class ScanRequest(BaseModel):
 
 
 class ScannedGuest(BaseModel):
-    """Enough for the officer to compare against the person in front of them (e.g. a forwarded screenshot)."""
+    """Enough for the officer to check the party in front of them against the registration.
 
-    name: str
-    contact: str = Field(description="Masked email, e.g. as•••@example.com")
+    Only ever returned for a pass of the scanned event that is admitted or already used.
+    """
+
+    name: str = Field(description="The employee's name")
+    contact: str = Field(description="Masked email, e.g. as•••@example.com (masked mobile for old registrations)")
+    employee_id: str | None = None
+    guest_names: list[str] = Field(default_factory=list, description="Accompanying guests, in the order registered")
+    party_size: int = Field(1, description="The employee plus their accompanying guests")
+    email_masked: str | None = None
+    mobile_masked: str | None = None
 
 
 class ScanResponse(BaseModel):

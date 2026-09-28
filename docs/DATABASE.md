@@ -11,6 +11,12 @@ Migrations so far:
 - `20260928_0001_create_events.py` — `events`, `officer_events`
 - `20260928_0002_guest_passes_and_gate.py` — `registrations`, `otp_challenges`, `check_ins`,
   `scan_attempts`
+- `20260928_0003_email_otp.py` — email columns on `registrations`, `otp_challenges.recipient_hash`
+- `20260928_0004_registration_links.py` — `events.public_id` (filled with a fresh UUID4 for existing events, then
+  made unique and not null) and `events.max_guests_per_registration`; renames `registrations.guest_name` to
+  `employee_name` (data kept) and adds `employee_id`, `employee_id_normalized`, `number_of_guests`; creates
+  `registration_guests`. Existing registrations keep their passes and count as a party of one. Downgrading refuses
+  to run once any registration has an employee id or guests.
 
 ## Audit columns
 
@@ -43,17 +49,19 @@ Staff accounts: admins and security officers. Guests never get a row here.
 
 | Column | Type | Notes |
 |---|---|---|
-| `id` | int, PK | |
+| `id` | int, PK | Internal only; never used in public links |
+| `public_id` | varchar(36) | not null, unique (`uq_events_public_id`). Random UUID4 for the registration link |
 | `title` | varchar(200) | not null |
 | `description` | text | nullable |
 | `location` | varchar(255) | not null |
 | `starts_at` | datetime | not null, indexed |
 | `ends_at` | datetime | nullable |
-| `capacity` | int | not null, `CHECK (capacity > 0)` |
+| `capacity` | int | not null, `CHECK (capacity > 0)`. Counted in people |
+| `max_guests_per_registration` | int | not null, default 5, `CHECK (0..10)` (`ck_events_max_guests_range`) |
 
 Constraint: `ck_events_ends_after_starts` — `ends_at IS NULL OR ends_at >= starts_at`.
 
-No `status`, `public_id` or `registered_count` column yet (see
+No `status` or `registered_count` column yet (see
 [`BUSINESS_RULES.md`](./BUSINESS_RULES.md) and [`event-management.md`](./event-management.md#open-decisions)).
 Seats taken are computed from `registrations`, not stored on `events`.
 
@@ -71,21 +79,26 @@ Unique: `uq_officer_events_officer_event` on `(officer_id, event_id)`.
 
 ### `registrations` (audited)
 
-A guest's registration for one event. The email is stored three ways: hashed for lookup,
-encrypted for re-sending OTPs, masked for display — see [`SECURITY.md`](./SECURITY.md). Legacy mobile columns are kept for registrations made before the SMS→email migration.
+An employee's registration for one event: one party (the employee plus `number_of_guests` accompanying guests) and
+one QR pass. The email and mobile are each stored three ways: hashed for lookup, encrypted (the email to send OTPs),
+masked for display — see [`SECURITY.md`](./SECURITY.md). Registrations from before the registration-link workflow
+have no employee id and no guests; those from before the SMS→email switch have only mobile columns.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | int, PK | |
 | `public_id` | varchar(36) | UUID4, unique — the id exposed to guests |
 | `event_id` | int | FK → `events.id`, not null |
-| `guest_name` | varchar(100) | not null |
+| `employee_id` | varchar(30) | nullable (older rows only) — as entered |
+| `employee_id_normalized` | varchar(30) | nullable (older rows only) — upper-cased, for uniqueness |
+| `employee_name` | varchar(100) | not null (was `guest_name` before `0004`) |
+| `number_of_guests` | int | not null, default 0 — accompanying guests; the party takes `1 + number_of_guests` seats |
 | `email_hash` | varchar(64) | not null — HMAC-SHA256, for lookup/uniqueness |
 | `email_encrypted` | varchar(512) | not null — Fernet ciphertext |
 | `email_masked` | varchar(260) | not null — display only, e.g. `as•••@example.com` |
-| `mobile_hash` | varchar(64) | nullable — HMAC of legacy mobile (pre-migration registrations only) |
-| `mobile_encrypted` | varchar(255) | nullable — Fernet ciphertext of legacy mobile (pre-migration only) |
-| `mobile_masked` | varchar(20) | nullable — legacy display copy (pre-migration only) |
+| `mobile_hash` | varchar(64) | nullable — HMAC of the `+91` mobile. Set on every new registration |
+| `mobile_encrypted` | varchar(255) | nullable — Fernet ciphertext of the mobile. Never used to send messages |
+| `mobile_masked` | varchar(20) | nullable — display copy, e.g. `98•••••210` |
 | `status` | varchar(20) | `PENDING_OTP` \| `VERIFIED` \| `CHECKED_IN`, default `PENDING_OTP` |
 | `consent_at` | datetime | not null |
 | `verified_at` | datetime | nullable |
@@ -93,8 +106,23 @@ encrypted for re-sending OTPs, masked for display — see [`SECURITY.md`](./SECU
 | `qr_issued_at` | datetime | nullable |
 | `checked_in_at` | datetime | nullable |
 
-Unique: `uq_registrations_event_email` on `(event_id, email_hash)`. Index:
-`ix_registrations_event_status` on `(event_id, status)`.
+Unique: `uq_registrations_event_email` on `(event_id, email_hash)`, `uq_registrations_event_employee` on
+`(event_id, employee_id_normalized)` (NULLs of older rows don't collide). Index: `ix_registrations_event_status` on
+`(event_id, status)`.
+
+### `registration_guests` (audited)
+
+The accompanying guests of a registration, in the order the employee listed them. Never hard-deleted: when a pending
+registration's guest list shrinks, the extra rows are soft-deleted, and revived if that position is needed again.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | int, PK | |
+| `registration_id` | int | FK → `registrations.id`, not null |
+| `name` | varchar(100) | not null |
+| `position` | int | not null — 0-based order |
+
+Unique: `uq_registration_guests_position` on `(registration_id, position)`.
 
 ### `otp_challenges` (append-only, no `AuditMixin`)
 

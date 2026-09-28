@@ -4,6 +4,8 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
+from app.modules.events.models import DEFAULT_MAX_GUESTS_PER_REGISTRATION, MAX_GUESTS_PER_REGISTRATION_CAP
+
 TITLE_MAX = 200
 LOCATION_MAX = 255
 DESCRIPTION_MAX = 5000
@@ -40,6 +42,7 @@ Title = Annotated[str, Field(min_length=3, max_length=TITLE_MAX), AfterValidator
 Location = Annotated[str, Field(min_length=2, max_length=LOCATION_MAX), AfterValidator(_clean_single_line)]
 Description = Annotated[str, Field(max_length=DESCRIPTION_MAX), AfterValidator(_clean_multi_line)]
 Capacity = Annotated[int, Field(ge=1, le=CAPACITY_MAX, strict=True)]
+MaxGuests = Annotated[int, Field(ge=0, le=MAX_GUESTS_PER_REGISTRATION_CAP, strict=True)]
 AwareDatetime = Annotated[datetime, AfterValidator(_to_utc_naive)]
 
 
@@ -54,6 +57,7 @@ class EventCreate(_StrictInput):
     starts_at: AwareDatetime
     ends_at: AwareDatetime | None = None
     capacity: Capacity
+    max_guests_per_registration: MaxGuests = DEFAULT_MAX_GUESTS_PER_REGISTRATION
 
     @model_validator(mode="after")
     def _check_dates(self) -> "EventCreate":
@@ -71,10 +75,11 @@ class EventUpdate(_StrictInput):
     starts_at: AwareDatetime | None = None
     ends_at: AwareDatetime | None = None
     capacity: Capacity | None = None
+    max_guests_per_registration: MaxGuests | None = None
 
     @model_validator(mode="after")
     def _reject_null_required(self) -> "EventUpdate":
-        for name in ("title", "location", "starts_at", "capacity"):
+        for name in ("title", "location", "starts_at", "capacity", "max_guests_per_registration"):
             if name in self.model_fields_set and getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null")
         return self
@@ -84,12 +89,14 @@ class EventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    public_id: str = Field(description="UUID used in the public registration link /register/{public_id}")
     title: str
     description: str | None
     location: str
     starts_at: datetime
     ends_at: datetime | None
     capacity: int
+    max_guests_per_registration: int
     created_at: datetime
     updated_at: datetime
     created_by: int | None

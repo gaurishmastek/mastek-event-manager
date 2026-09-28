@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -315,3 +316,58 @@ def test_other_roles_are_denied(client, login_as, role):
     assert client.get("/api/v1/events").status_code == 403
     assert client.get("/api/v1/events/1").status_code == 403
     assert client.post("/api/v1/events", json=payload()).status_code == 403
+
+
+# --- public registration link ----------------------------------------------
+
+UUID4 = r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+
+
+def test_new_events_get_a_unique_random_public_id(client, admin):
+    events = [create(client) for _ in range(3)]
+
+    public_ids = [event["public_id"] for event in events]
+    assert all(re.fullmatch(UUID4, public_id) for public_id in public_ids)
+    assert len(set(public_ids)) == 3
+    assert all(str(event["id"]) not in event["public_id"].split("-") for event in events)
+
+
+def test_public_id_cannot_be_set_or_changed_by_the_client(client, admin):
+    forged = client.post("/api/v1/events", json=payload(public_id="00000000-0000-4000-8000-000000000000"))
+    assert forged.status_code == 422
+    event = create(client)
+
+    response = client.patch(f"/api/v1/events/{event['id']}", json={"public_id": "x"})
+
+    assert response.status_code == 422
+    assert client.get(f"/api/v1/events/{event['id']}").json()["public_id"] == event["public_id"]
+
+
+def test_public_id_links_to_the_public_registration_page(client, admin):
+    event = create(client)
+
+    response = client.get(f"/api/v1/public/events/{event['public_id']}")
+
+    assert response.status_code == 200
+    assert response.json()["title"] == event["title"]
+    # The internal numeric id is not a valid public link.
+    assert client.get(f"/api/v1/public/events/{event['id']}").status_code == 422
+
+
+def test_max_guests_defaults_to_five_and_can_be_edited(client, admin):
+    event = create(client)
+    assert event["max_guests_per_registration"] == 5
+
+    updated = client.patch(f"/api/v1/events/{event['id']}", json={"max_guests_per_registration": 0})
+
+    assert updated.status_code == 200
+    assert updated.json()["max_guests_per_registration"] == 0
+    assert create(client, max_guests_per_registration=10)["max_guests_per_registration"] == 10
+
+
+@pytest.mark.parametrize("value", [-1, 11, 2.5, "3", True, None])
+def test_max_guests_must_be_a_small_whole_number(client, admin, value):
+    assert client.post("/api/v1/events", json=payload(max_guests_per_registration=value)).status_code == 422
+    event = create(client)
+    patch = client.patch(f"/api/v1/events/{event['id']}", json={"max_guests_per_registration": value})
+    assert patch.status_code == 422

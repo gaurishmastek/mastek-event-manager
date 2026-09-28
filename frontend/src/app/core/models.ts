@@ -15,12 +15,15 @@ export interface CurrentUser {
 
 export interface EventRead {
   id: number;
+  /** Random UUID for the public registration link `/register/{public_id}`. Never use `id` in public links. */
+  public_id: string;
   title: string;
   description: string | null;
   location: string;
   starts_at: string;
   ends_at: string | null;
   capacity: number;
+  max_guests_per_registration: number;
   created_at: string;
   updated_at: string;
   created_by: number | null;
@@ -41,6 +44,7 @@ export interface EventCreate {
   starts_at: string;
   ends_at?: string | null;
   capacity: number;
+  max_guests_per_registration: number;
 }
 
 export type EventUpdate = Partial<EventCreate>;
@@ -48,12 +52,13 @@ export type EventUpdate = Partial<EventCreate>;
 // ---- Public guest registration (backend/app/modules/guests) ---------------
 
 export interface PublicEventRead {
-  id: number;
+  public_id: string;
   title: string;
   description: string | null;
   location: string;
   starts_at: string;
   ends_at: string | null;
+  max_guests_per_registration: number;
 }
 
 export interface PublicEventInfo extends PublicEventRead {
@@ -62,8 +67,15 @@ export interface PublicEventInfo extends PublicEventRead {
 }
 
 export interface RegistrationCreate {
-  guest_name: string;
+  employee_id: string;
+  employee_name: string;
   email: string;
+  /** Indian mobile number; the backend stores it as +91XXXXXXXXXX. OTPs still go by email only. */
+  mobile: string;
+  /** Accompanying guests, not counting the employee. */
+  number_of_guests: number;
+  /** Exactly `number_of_guests` names. */
+  guest_names: string[];
   consent: true;
 }
 
@@ -82,7 +94,11 @@ export interface OtpVerify {
 export interface GuestPass {
   registration_id: string;
   status: string;
-  guest_name: string;
+  employee_id: string | null;
+  employee_name: string;
+  guest_names: string[];
+  /** The employee plus their guests; the one pass admits all of them once. */
+  party_size: number;
   event: PublicEventRead;
   qr_token: string;
   qr_svg: string;
@@ -91,12 +107,19 @@ export interface GuestPass {
 
 // ---- Gate scanning (backend/app/modules/gate) ------------------------------
 
-export type ScanResult = 'ADMITTED' | 'ALREADY_CHECKED_IN' | 'WRONG_EVENT' | 'INVALID' | 'GATE_CLOSED';
+export type ScanResult = 'admitted' | 'already_checked_in' | 'wrong_event' | 'invalid' | 'gate_closed';
 
+/** The registered party behind a pass. Only returned for admitted or already-used passes. */
 export interface ScannedGuest {
+  /** The employee's name. */
   name: string;
   /** Masked email (or masked mobile for registrations made before OTPs moved to email). */
   contact: string;
+  employee_id: string | null;
+  guest_names: string[];
+  party_size: number;
+  email_masked: string | null;
+  mobile_masked: string | null;
 }
 
 export interface ScanRequest {
@@ -121,6 +144,34 @@ export interface EntryRead {
 
 export interface EntryPage {
   items: EntryRead[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// ---- Admin registrations list (backend/app/modules/guests/admin_router.py) --
+
+export type RegistrationStatus = 'PENDING_OTP' | 'VERIFIED' | 'CHECKED_IN';
+
+export interface RegistrationAdminRead {
+  registration_id: string;
+  employee_id: string | null;
+  employee_name: string;
+  email_masked: string | null;
+  mobile_masked: string | null;
+  guest_names: string[];
+  number_of_guests: number;
+  party_size: number;
+  status: RegistrationStatus;
+  verified_at: string | null;
+  qr_issued: boolean;
+  qr_issued_at: string | null;
+  checked_in_at: string | null;
+  created_at: string;
+}
+
+export interface RegistrationAdminPage {
+  items: RegistrationAdminRead[];
   total: number;
   limit: number;
   offset: number;
