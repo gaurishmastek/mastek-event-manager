@@ -10,7 +10,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   destructive: 'bg-destructive text-destructive-foreground hover:opacity-90',
 };
 
-/** A spartan/ui-style button. Swap for `<hlm-button>` once `@spartan-ng/ui-button` is installed. */
+/** A small, self-contained Tailwind button. */
 @Component({
   selector: 'app-button',
   standalone: true,

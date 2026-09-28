@@ -26,8 +26,8 @@
 }
 
 /*
- * Design tokens follow shadcn/ui's convention (which spartan/ui, the Angular
- * port used in this app, also follows) so components read as one system.
+ * A small set of HSL design tokens so the hand-rolled components in
+ * src/app/ui/ read as one system.
  */
 :root {
   --background: 0 0% 100%;

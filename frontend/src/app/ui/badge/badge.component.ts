@@ -9,7 +9,7 @@ const TONE_CLASSES: Record<BadgeTone, string> = {
   warning: 'bg-amber-100 text-amber-900',
 };
 
-/** A spartan/ui-style badge. Swap for `<hlm-badge>` once `@spartan-ng/ui-badge` is installed. */
+/** A small, self-contained Tailwind badge. */
 @Component({
   selector: 'app-badge',
   standalone: true,

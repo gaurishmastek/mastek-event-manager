@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 
-/** A spartan/ui-style card shell. Swap for `<hlm-card>` once `@spartan-ng/ui-card` is installed. */
+/** A small, self-contained Tailwind card shell. */
 @Component({
   selector: 'app-card',
   standalone: true,

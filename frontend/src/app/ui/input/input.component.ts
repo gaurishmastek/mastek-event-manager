@@ -1,7 +1,7 @@
 import { Component, forwardRef, input } from '@angular/core';
 import { NG_VALUE_ACCESSOR, type ControlValueAccessor } from '@angular/forms';
 
-/** A spartan/ui-style text input with `ControlValueAccessor` for reactive forms. */
+/** A small, self-contained Tailwind text input with `ControlValueAccessor` for reactive forms. */
 @Component({
   selector: 'app-input',
   standalone: true,
