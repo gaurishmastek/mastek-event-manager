@@ -1,0 +1,199 @@
+<div class="space-y-4">
+  <div>
+    <a routerLink="/admin/events" class="text-sm text-muted-foreground underline">Events</a>
+    <h1 class="text-xl font-semibold">Security officers{{ event() ? ' · ' + event()!.title : '' }}</h1>
+    @if (event(); as ev) {
+      <p class="text-sm text-muted-foreground">
+        {{ ev.location }} · {{ utc(ev.starts_at) | date: 'EEE d MMM y, h:mm a' : ist }} IST
+      </p>
+    }
+  </div>
+
+  @if (loading()) {
+    <app-spinner />
+  } @else if (loadError()) {
+    <app-card>
+      <div class="space-y-3 p-6">
+        <p class="text-sm text-destructive" role="alert">{{ loadError() }}</p>
+        <app-button variant="outline" (click)="load()">Try again</app-button>
+      </div>
+    </app-card>
+  } @else {
+    <div aria-live="polite">
+      @if (successMessage()) {
+        <p class="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success">{{ successMessage() }}</p>
+      }
+    </div>
+    @if (actionError()) {
+      <div class="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2" role="alert">
+        <p class="text-sm text-destructive">{{ actionError() }}</p>
+        @if (pendingAssignment(); as pending) {
+          <app-button [loading]="busyOfficerId() === pending.id" (click)="retryPendingAssignment()">
+            Retry assigning {{ pending.full_name }}
+          </app-button>
+        }
+      </div>
+    }
+
+    <app-card>
+      <div class="p-4">
+        <h2 class="mb-3 text-sm font-semibold">Assigned to this event</h2>
+        @if (assigned().length === 0) {
+          <p class="text-sm text-muted-foreground">No security officers are assigned yet. Nobody can scan passes for this event until you assign one.</p>
+        } @else {
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[32rem] text-sm">
+              <thead class="border-b border-border text-left text-muted-foreground">
+                <tr>
+                  <th class="py-2 pr-4 font-medium">Name</th>
+                  <th class="py-2 pr-4 font-medium">Email</th>
+                  <th class="py-2 pr-4 font-medium">Status</th>
+                  <th class="py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of assigned(); track row.id) {
+                  <tr class="border-b border-border last:border-0" data-testid="assigned-officer">
+                    <td class="py-2 pr-4 font-medium">{{ row.user?.full_name ?? 'Account removed' }}</td>
+                    <td class="py-2 pr-4 text-muted-foreground">{{ row.user?.email ?? '—' }}</td>
+                    <td class="py-2 pr-4">
+                      @if (row.user?.is_active) {
+                        <app-badge tone="success">Active</app-badge>
+                      } @else {
+                        <app-badge tone="neutral">Inactive</app-badge>
+                      }
+                    </td>
+                    <td class="py-2 text-right">
+                      <button
+                        type="button"
+                        class="text-sm text-destructive underline disabled:opacity-50"
+                        [disabled]="busyOfficerId() !== null"
+                        [attr.aria-label]="'Unassign ' + (row.user?.full_name ?? 'officer') + ' from this event'"
+                        (click)="unassign(row.id, row.user?.full_name ?? 'this officer')"
+                      >
+                        {{ busyOfficerId() === row.id ? 'Removing…' : 'Unassign' }}
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    </app-card>
+
+    <app-card>
+      <form class="flex flex-wrap items-end gap-3 p-4" (ngSubmit)="assignSelected()">
+        <div class="min-w-[16rem] flex-1">
+          <label for="existing-officer" class="mb-1 block text-sm font-semibold">Assign an existing officer</label>
+          <select
+            id="existing-officer"
+            name="existingOfficer"
+            [ngModel]="selectedOfficerId()"
+            (ngModelChange)="selectedOfficerId.set($event)"
+            [disabled]="available().length === 0"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option [ngValue]="null">
+              {{ available().length ? 'Choose an officer' : 'No other active officers' }}
+            </option>
+            @for (officer of available(); track officer.id) {
+              <option [ngValue]="officer.id">{{ officer.full_name }} · {{ officer.email }}</option>
+            }
+          </select>
+        </div>
+        <app-button
+          type="submit"
+          [disabled]="selectedOfficerId() === null || busyOfficerId() !== null"
+          [loading]="busyOfficerId() !== null && busyOfficerId() === selectedOfficerId()"
+        >
+          Assign
+        </app-button>
+      </form>
+    </app-card>
+
+    <app-card>
+      <form class="space-y-4 p-4" novalidate (ngSubmit)="createAndAssign()">
+        <div>
+          <h2 class="text-sm font-semibold">Create a new security officer</h2>
+          <p class="text-xs text-muted-foreground">
+            They are assigned to this event straight away. Officers have no password: they sign in at
+            <span class="font-mono">/gate/login</span> with a code emailed to this address.
+          </p>
+        </div>
+
+        <div>
+          <label for="officer-name" class="mb-1 block text-sm font-medium">Full name</label>
+          <input
+            id="officer-name"
+            name="fullName"
+            autocomplete="off"
+            maxlength="120"
+            required
+            [ngModel]="fullName()"
+            (ngModelChange)="fullName.set($event)"
+            (blur)="markTouched('fullName')"
+            [attr.aria-invalid]="show('fullName') && !!officerNameError(fullName())"
+            aria-describedby="officer-name-error"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          @if (show('fullName') && officerNameError(fullName()); as error) {
+            <p id="officer-name-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
+          }
+        </div>
+
+        <div>
+          <label for="officer-email" class="mb-1 block text-sm font-medium">Email</label>
+          <input
+            id="officer-email"
+            name="email"
+            type="email"
+            autocomplete="off"
+            maxlength="254"
+            required
+            [ngModel]="email()"
+            (ngModelChange)="email.set($event)"
+            (blur)="markTouched('email')"
+            [attr.aria-invalid]="show('email') && !!emailError(email())"
+            aria-describedby="officer-email-error"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          @if (show('email') && emailError(email()); as error) {
+            <p id="officer-email-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
+          }
+        </div>
+
+        <div>
+          <label for="officer-mobile" class="mb-1 block text-sm font-medium">Mobile (optional)</label>
+          <input
+            id="officer-mobile"
+            name="mobile"
+            type="tel"
+            inputmode="tel"
+            autocomplete="off"
+            maxlength="20"
+            [ngModel]="mobile()"
+            (ngModelChange)="mobile.set($event)"
+            (blur)="markTouched('mobile')"
+            [attr.aria-invalid]="show('mobile') && !!optionalMobileError(mobile())"
+            aria-describedby="officer-mobile-hint officer-mobile-error"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <p id="officer-mobile-hint" class="mt-1 text-xs text-muted-foreground">Contact only; sign-in codes always go by email.</p>
+          @if (show('mobile') && optionalMobileError(mobile()); as error) {
+            <p id="officer-mobile-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
+          }
+        </div>
+
+        @if (createError()) {
+          <p class="text-sm text-destructive" role="alert">{{ createError() }}</p>
+        }
+
+        <app-button type="submit" [loading]="creating()" [disabled]="!!pendingAssignment() || busyOfficerId() !== null">
+          {{ creating() ? 'Creating officer…' : 'Create and assign' }}
+        </app-button>
+      </form>
+    </app-card>
+  }
+</div>

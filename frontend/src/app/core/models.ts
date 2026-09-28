@@ -11,6 +11,38 @@ export interface CurrentUser {
   name?: string;
 }
 
+// ---- Staff accounts (backend/app/modules/users) ---------------------------
+
+/** `UserRead`: never carries the password hash or the (encrypted) mobile. */
+export interface StaffUser {
+  id: number;
+  email: string;
+  full_name: string;
+  role: StaffRole;
+  is_active: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+/** A security officer account. Officers sign in with an emailed code, so there is no password field. */
+export interface SecurityOfficerCreate {
+  email: string;
+  full_name: string;
+  mobile?: string | null;
+  role: 'security_officer';
+}
+
+export interface OfficerOtpSent {
+  resend_available_at: string;
+}
+
+export interface StaffSession {
+  access_token: string;
+  token_type?: string;
+  expires_in?: number;
+  user: CurrentUser;
+}
+
 // ---- Events (backend/app/modules/events) ----------------------------------
 
 export interface EventRead {
@@ -28,6 +60,10 @@ export interface EventRead {
   updated_at: string;
   created_by: number | null;
   updated_by: number | null;
+  /** Naive UTC. When the gate starts accepting scans (server setting, before `starts_at`). */
+  gate_opens_at: string;
+  /** Naive UTC. When the gate stops accepting scans. */
+  gate_closes_at: string;
 }
 
 export interface EventPage {

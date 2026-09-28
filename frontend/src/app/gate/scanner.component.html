@@ -1,97 +1,230 @@
 <div class="mx-auto min-h-screen max-w-md space-y-4 bg-secondary/30 px-4 py-4">
-  <div class="flex items-center justify-between">
-    <h1 class="text-lg font-semibold">Gate · Event #{{ eventId }}</h1>
-  </div>
-
-  <app-input placeholder="Gate name (optional, e.g. Gate 2)" [ngModel]="gate()" (ngModelChange)="gate.set($event)" name="gate" />
-
-  <div class="overflow-hidden rounded-lg border border-border bg-black">
-    @if (cameraSupported()) {
-      <video #video class="aspect-square w-full object-cover" [class.hidden]="!cameraActive()" muted playsinline></video>
-      @if (!cameraActive()) {
-        <div class="flex aspect-square w-full items-center justify-center">
-          <app-button (click)="startCamera()">Start camera</app-button>
-        </div>
-      }
-    } @else {
-      <div class="flex aspect-[3/1] w-full items-center justify-center px-4 text-center text-sm text-white/80">
-        Camera scanning isn't supported in this browser. Use manual entry below.
-      </div>
-    }
-  </div>
-
-  @if (cameraError()) {
-    <p class="text-sm text-destructive">{{ cameraError() }}</p>
-  }
-
-  <form class="flex gap-2" (ngSubmit)="submitManualToken()">
-    <app-input
-      class="flex-1"
-      placeholder="Paste or type the pass token"
-      [ngModel]="manualToken()"
-      (ngModelChange)="manualToken.set($event)"
-      name="manualToken"
-    />
-    <app-button type="submit" [loading]="scanning()" [disabled]="!manualToken().trim()">Check in</app-button>
-  </form>
-
-  @if (lastResult(); as result) {
-    <div class="rounded-lg border border-border bg-background p-4">
-      <app-badge [tone]="toneFor(result.result)">{{ result.result.replaceAll('_', ' ') }}</app-badge>
-      <p class="mt-2 text-sm font-medium">{{ result.message }}</p>
-      @if (result.guest; as guest) {
-        <dl class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-          <dt class="text-muted-foreground">Party size</dt>
-          <dd class="text-base font-semibold">
-            {{ guest.party_size }} {{ guest.party_size === 1 ? 'person' : 'people' }}
-          </dd>
-          <dt class="text-muted-foreground">Employee</dt>
-          <dd>
-            {{ guest.name }}
-            @if (guest.employee_id) {
-              <span class="text-muted-foreground">· {{ guest.employee_id }}</span>
-            }
-          </dd>
-          @if (guest.guest_names.length) {
-            <dt class="text-muted-foreground">Guests</dt>
-            <dd>
-              <ol class="list-decimal pl-4">
-                @for (name of guest.guest_names; track $index) {
-                  <li>{{ name }}</li>
-                }
-              </ol>
-            </dd>
-          }
-          <dt class="text-muted-foreground">Email</dt>
-          <dd>{{ guest.email_masked || guest.contact }}</dd>
-          @if (guest.mobile_masked) {
-            <dt class="text-muted-foreground">Mobile</dt>
-            <dd>{{ guest.mobile_masked }}</dd>
-          }
-        </dl>
-      }
-      @if (result.result === 'already_checked_in' && result.checked_in_at) {
-        <p class="mt-2 text-sm text-muted-foreground">
-          Entered {{ result.checked_in_at + 'Z' | date: 'medium' }}@if (result.gate) {<span> at {{ result.gate }}</span>}
+  <header class="flex items-start justify-between gap-2">
+    <div class="min-w-0">
+      <button type="button" class="text-sm text-muted-foreground underline" (click)="changeEvent()">Your events</button>
+      <h1 class="truncate text-lg font-semibold">{{ event()?.title ?? 'Gate scanner' }}</h1>
+      @if (event(); as ev) {
+        <p class="text-xs text-muted-foreground">
+          {{ ev.location }} · {{ utc(ev.starts_at) | date: 'EEE d MMM, h:mm a' : ist }} IST
         </p>
       }
     </div>
+    <app-button variant="outline" (click)="signOut()">Sign out</app-button>
+  </header>
+
+  @switch (eventState()) {
+    @case ('loading') {
+      <app-spinner />
+    }
+    @case ('unavailable') {
+      <div class="rounded-lg border border-border bg-background p-6 text-center" role="alert">
+        <p class="text-base font-medium">This event isn’t available.</p>
+        <p class="mt-1 text-sm text-muted-foreground">It may not be assigned to you. Contact an administrator.</p>
+        <a routerLink="/gate/events" class="mt-3 inline-block text-sm text-primary underline">Back to your events</a>
+      </div>
+    }
+    @case ('error') {
+      <div class="space-y-3 rounded-lg border border-destructive/40 bg-background p-4" role="alert">
+        <p class="text-sm text-destructive">{{ eventError() }}</p>
+        <app-button variant="outline" (click)="loadEvent()">Try again</app-button>
+      </div>
+    }
   }
 
-  <div>
-    <h2 class="mb-2 text-sm font-medium text-muted-foreground">Recent entries</h2>
-    <ul class="space-y-2">
-      @for (entry of entries(); track entry.checked_in_at + entry.guest.contact) {
-        <li class="rounded-md border border-border bg-background px-3 py-2 text-sm">
-          <span class="font-medium">{{ entry.guest.name }}</span>
-          @if (entry.guest.party_size > 1) {
-            <span class="text-muted-foreground"> +{{ entry.guest.party_size - 1 }}</span>
+  <!-- The video element always exists so a stream can attach; it is only shown while the camera runs. -->
+  <div [class.hidden]="eventState() !== 'ready'" class="space-y-4">
+    <div>
+      <label for="gate-name" class="mb-1 block text-sm font-medium">Gate name (optional)</label>
+      <input
+        id="gate-name"
+        name="gate"
+        maxlength="50"
+        placeholder="e.g. Gate 2"
+        [ngModel]="gate()"
+        (ngModelChange)="gate.set($event)"
+        class="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
+    </div>
+
+    <div class="relative overflow-hidden rounded-lg border border-border bg-black">
+      <video
+        #video
+        class="aspect-square w-full object-cover"
+        [class.hidden]="cameraState() !== 'active'"
+        muted
+        playsinline
+        autoplay
+        aria-label="Camera preview for scanning guest passes"
+      ></video>
+
+      @if (cameraState() === 'active') {
+        <div class="pointer-events-none absolute inset-8 rounded-lg border-4 border-white/70" aria-hidden="true"></div>
+        @if (submitting()) {
+          <div class="absolute inset-0 flex items-center justify-center bg-black/60 text-lg font-semibold text-white" role="status">
+            Checking pass…
+          </div>
+        }
+      } @else {
+        <div class="flex min-h-64 w-full flex-col items-center justify-center gap-3 px-6 py-8 text-center text-white">
+          @if (cameraState() === 'error' && cameraError(); as kind) {
+            <div role="alert" data-testid="camera-error" [attr.data-kind]="kind">
+              <p class="text-base font-semibold">{{ cameraMessages[kind].title }}</p>
+              <p class="mt-1 text-sm text-white/80">{{ cameraMessages[kind].help }}</p>
+            </div>
+            @if (kind !== 'insecure' && kind !== 'unsupported') {
+              <app-button (click)="startCamera()">Try again</app-button>
+            }
+          } @else {
+            <p class="text-sm text-white/85">
+              The camera is used only to read guest QR passes. Codes are read on this device; no images are sent or saved.
+            </p>
+            <app-button [loading]="cameraState() === 'starting'" (click)="startCamera()">
+              Allow camera and start scanning
+            </app-button>
           }
-          <span class="text-muted-foreground"> · {{ entry.guest.contact }} · {{ entry.checked_in_at | date: 'shortTime' }}</span>
-        </li>
-      } @empty {
-        <li class="text-sm text-muted-foreground">No entries yet.</li>
+        </div>
       }
-    </ul>
+    </div>
+
+    @if (cameraState() === 'active') {
+      <app-button variant="outline" class="block w-full" (click)="stopCamera()">Stop camera</app-button>
+    }
+
+    @if (result(); as view) {
+      <section
+        data-testid="scan-result"
+        [attr.data-kind]="view.kind"
+        role="alert"
+        aria-live="assertive"
+        class="rounded-lg border-4 p-4"
+        [class.border-success]="view.tone === 'success'"
+        [class.bg-green-50]="view.tone === 'success'"
+        [class.border-amber-500]="view.tone === 'warning'"
+        [class.bg-amber-50]="view.tone === 'warning'"
+        [class.border-destructive]="view.tone === 'danger'"
+        [class.bg-red-50]="view.tone === 'danger'"
+      >
+        <div class="flex items-center gap-3">
+          <span
+            aria-hidden="true"
+            class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-3xl font-bold text-white"
+            [class.bg-success]="view.tone === 'success'"
+            [class.bg-amber-500]="view.tone === 'warning'"
+            [class.bg-destructive]="view.tone === 'danger'"
+            >{{ view.symbol }}</span
+          >
+          <div>
+            <h2 class="text-3xl font-bold leading-tight text-gray-900">{{ view.heading }}</h2>
+            <p class="text-base text-gray-800">{{ view.detail }}</p>
+          </div>
+        </div>
+
+        @if (view.response?.guest; as guest) {
+          <dl class="mt-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-base text-gray-900">
+            <dt class="text-gray-600">Party size</dt>
+            <dd class="text-2xl font-bold">{{ guest.party_size }} {{ guest.party_size === 1 ? 'person' : 'people' }}</dd>
+            <dt class="text-gray-600">Employee</dt>
+            <dd class="font-semibold">{{ guest.name }}</dd>
+            @if (guest.employee_id) {
+              <dt class="text-gray-600">Employee ID</dt>
+              <dd>{{ guest.employee_id }}</dd>
+            }
+            @if (guest.guest_names.length) {
+              <dt class="text-gray-600">Guests</dt>
+              <dd>
+                <ol class="list-decimal pl-5">
+                  @for (name of guest.guest_names; track $index) {
+                    <li>{{ name }}</li>
+                  }
+                </ol>
+              </dd>
+            }
+            <dt class="text-gray-600">Email</dt>
+            <dd>{{ guest.email_masked || guest.contact || '—' }}</dd>
+            <dt class="text-gray-600">Mobile</dt>
+            <dd>{{ guest.mobile_masked || '—' }}</dd>
+            @if (view.response?.checked_in_at; as at) {
+              <dt class="text-gray-600">{{ view.kind === 'admitted' ? 'Checked in' : 'First entry' }}</dt>
+              <dd data-testid="checked-in-at">{{ utc(at) | date: 'd MMM, h:mm:ss a' : ist }} IST</dd>
+            }
+            @if (view.response?.gate) {
+              <dt class="text-gray-600">Gate</dt>
+              <dd>{{ view.response?.gate }}</dd>
+            }
+          </dl>
+        }
+
+        @if (view.kind === 'session_expired') {
+          <app-button class="mt-4 block w-full" (click)="signInAgain()">Sign in again</app-button>
+        } @else if (view.kind === 'not_assigned' || view.kind === 'forbidden') {
+          <app-button class="mt-4 block w-full" (click)="changeEvent()">Back to your events</app-button>
+        } @else {
+          <button
+            type="button"
+            data-testid="scan-next"
+            class="mt-4 flex h-14 w-full items-center justify-center rounded-md bg-gray-900 text-lg font-semibold text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring"
+            (click)="scanNext()"
+          >
+            Scan next guest
+          </button>
+        }
+      </section>
+    }
+
+    <details class="rounded-lg border border-border bg-background p-3">
+      <summary class="cursor-pointer text-sm font-medium">Can’t scan with this camera? Enter the pass code</summary>
+      <form class="mt-3 space-y-2" novalidate (ngSubmit)="submitManualToken()">
+        <label for="manual-token" class="block text-xs text-muted-foreground">The text inside the guest’s QR code, if it was read another way</label>
+        <div class="flex gap-2">
+          <input
+            id="manual-token"
+            name="manualToken"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            maxlength="128"
+            [ngModel]="manualToken()"
+            (ngModelChange)="manualToken.set($event)"
+            class="flex h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <app-button type="submit" [loading]="submitting()" [disabled]="!manualToken().trim() || !!result()">Check in</app-button>
+        </div>
+        @if (manualError()) {
+          <p class="text-xs text-destructive" role="alert">{{ manualError() }}</p>
+        }
+      </form>
+    </details>
+
+    <section>
+      <div class="mb-2 flex items-center justify-between">
+        <h2 class="text-sm font-medium text-muted-foreground">Recent entries</h2>
+        <button type="button" class="text-xs text-primary underline" (click)="loadEntries()">Refresh</button>
+      </div>
+      @switch (entriesState()) {
+        @case ('loading') {
+          <p class="text-sm text-muted-foreground" role="status">Loading entries…</p>
+        }
+        @case ('error') {
+          <p class="text-sm text-destructive" role="alert">{{ entriesError() }}</p>
+        }
+        @default {
+          <ul class="space-y-2">
+            @for (entry of entries(); track $index) {
+              <li class="rounded-md border border-border bg-background px-3 py-2 text-sm" data-testid="entry">
+                <div class="flex justify-between gap-2">
+                  <span class="font-medium">{{ entry.guest.name }}</span>
+                  <span class="shrink-0 text-muted-foreground">{{ utc(entry.checked_in_at) | date: 'h:mm a' : ist }}</span>
+                </div>
+                <div class="text-xs text-muted-foreground">
+                  Party of {{ entry.guest.party_size }} · {{ entry.guest.email_masked || entry.guest.contact }}@if (entry.gate) {<span> · {{ entry.gate }}</span>}
+                </div>
+              </li>
+            } @empty {
+              <li class="text-sm text-muted-foreground">No entries yet.</li>
+            }
+          </ul>
+        }
+      }
+    </section>
   </div>
 </div>

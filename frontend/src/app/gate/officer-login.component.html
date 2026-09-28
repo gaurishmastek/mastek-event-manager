@@ -7,31 +7,68 @@
       </div>
 
       @if (step() === 'email') {
-        <form class="space-y-4" (ngSubmit)="requestOtp()">
+        <form class="space-y-4" novalidate (ngSubmit)="requestOtp()">
           <div>
-            <label for="email" class="mb-1 block text-sm font-medium">Registered email</label>
-            <app-input id="email" type="email" [maxlength]="254" [ngModel]="email()" (ngModelChange)="email.set($event)" name="email" />
-          </div>
-          <div>
-            <label for="event-id" class="mb-1 block text-sm font-medium">Event ID for this gate</label>
-            <app-input id="event-id" inputmode="numeric" [ngModel]="eventId()" (ngModelChange)="eventId.set($event)" name="eventId" placeholder="e.g. 12" />
+            <label for="officer-email" class="mb-1 block text-sm font-medium">Registered email</label>
+            <input
+              id="officer-email"
+              name="email"
+              type="email"
+              inputmode="email"
+              autocomplete="email"
+              maxlength="254"
+              required
+              [ngModel]="email()"
+              (ngModelChange)="email.set($event)"
+              class="flex h-12 w-full rounded-md border border-input bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <p class="mt-1 text-xs text-muted-foreground">We email you a 6-digit code. Officers have no password.</p>
           </div>
           @if (errorMessage()) {
-            <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+            <p class="text-sm text-destructive" role="alert">{{ errorMessage() }}</p>
           }
-          <app-button type="submit" [loading]="submitting()" class="block w-full">Send code</app-button>
+          <app-button type="submit" [loading]="submitting()" [disabled]="emailInvalid()" class="block w-full">Send code</app-button>
         </form>
       } @else {
-        <form class="space-y-4" (ngSubmit)="verifyOtp()">
+        <form class="space-y-4" novalidate (ngSubmit)="verifyOtp()">
+          <p class="text-sm text-muted-foreground" aria-live="polite" data-testid="code-sent">{{ infoMessage() }}</p>
           <div>
-            <label for="code" class="mb-1 block text-sm font-medium">One-time code</label>
-            <p class="mb-2 text-xs text-muted-foreground">If {{ email() }} belongs to an officer, a code is on its way there.</p>
-            <app-input id="code" inputmode="numeric" [ngModel]="code()" (ngModelChange)="code.set($event)" name="code" />
+            <label for="officer-code" class="mb-1 block text-sm font-medium">6-digit code</label>
+            <input
+              id="officer-code"
+              name="code"
+              type="text"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              pattern="[0-9]*"
+              maxlength="6"
+              required
+              [ngModel]="code()"
+              (ngModelChange)="onCodeInput($event)"
+              class="flex h-14 w-full rounded-md border border-input bg-background px-3 text-center font-mono text-2xl tracking-[0.5em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
           </div>
           @if (errorMessage()) {
-            <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+            <p class="text-sm text-destructive" role="alert">{{ errorMessage() }}</p>
           }
-          <app-button type="submit" [loading]="submitting()" class="block w-full">Sign in</app-button>
+          <app-button type="submit" [loading]="submitting()" [disabled]="!codeValid()" class="block w-full">Sign in</app-button>
+
+          <div class="flex items-center justify-between text-sm">
+            <button type="button" class="text-muted-foreground underline" (click)="changeEmail()">Use a different email</button>
+            <button
+              type="button"
+              class="text-primary underline disabled:text-muted-foreground disabled:no-underline"
+              data-testid="resend"
+              [disabled]="resendSecondsLeft() > 0 || resending()"
+              (click)="resendOtp()"
+            >
+              @if (resendSecondsLeft() > 0) {
+                Resend in {{ resendSecondsLeft() }}s
+              } @else {
+                {{ resending() ? 'Sending…' : 'Resend code' }}
+              }
+            </button>
+          </div>
         </form>
       }
     </div>

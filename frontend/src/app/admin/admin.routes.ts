@@ -26,6 +26,10 @@ export const ADMIN_ROUTES: Routes = [
           import('./events/event-registrations.component').then((m) => m.EventRegistrationsComponent),
       },
       {
+        path: 'events/:id/security',
+        loadComponent: () => import('./events/event-security.component').then((m) => m.EventSecurityComponent),
+      },
+      {
         path: 'events/:id/edit',
         loadComponent: () => import('./events/event-form.component').then((m) => m.EventFormComponent),
       },
