@@ -33,8 +33,9 @@ Every router except auth and the public guest routes is mounted behind authentic
 
 A security officer only acts on events they are assigned to, via the `officer_events` table
 (`officer_id`, `event_id`, unique pair). Admins manage it with `GET/PUT/DELETE
-/events/{id}/officers[/{user_id}]`; only active `security_officer` users can be assigned, and
-unassigning is a soft delete.
+/events/{id}/officers[/{user_id}]` or the admin page `/admin/events/:id/security`, which also creates new officer
+accounts (no password) and assigns them in one step. Only active `security_officer` users can be assigned, one officer
+can be assigned to many events, unassigning is a soft delete, and assigning again restores the same row.
 
 Enforcement points:
 
@@ -58,7 +59,7 @@ An officer requesting an event (read, or gate scan/entries) they are not assigne
 | `GET /gate/events/{id}/entries` | any event | assigned events only (else 404) | — |
 | `GET/PUT/DELETE /events/{id}/officers...` | ✅ | ❌ (403) | — |
 | `GET /events/{id}/registrations` (registrations list, masked contacts) | ✅ | ❌ (403, even for assigned events) | — |
-| `GET/POST /users` (staff accounts) | ✅ | ❌ (403) | — |
+| `GET/POST /users` (staff accounts, `?role=` filter) | ✅ | ❌ (403) | — |
 | `/auth/login`, `/auth/login/verify`, `/auth/officer/otp`, `/auth/officer/verify` | public | public | — |
 | `GET /auth/me`, `POST /auth/logout` | ✅ | ✅ | — |
 | Public registration/OTP/verify endpoints (`/public/...`, by event `public_id`) | n/a | n/a | ✅, no login |
@@ -66,3 +67,11 @@ An officer requesting an event (read, or gate scan/entries) they are not assigne
 Not yet built: editing or deactivating staff accounts via the API, an audit-log read API, and admin
 manual check-in (fallback for when scanning is unavailable) — see `event-management.md`'s
 "Open decisions" and "Build order" for what is still planned.
+
+## Frontend routes
+
+Angular guards (`core/auth.guard.ts`) only decide which page to show; every protected call is checked again by the
+backend. `/admin/**` requires the `admin` role. `/gate/events` and `/gate/scan/:eventId` require `security_officer`
+or `admin`; the event list comes from `GET /events`, which the backend already limits to the officer's assignments,
+and the scanner shows "This event isn't available" when `GET /events/{id}` returns `404`.
+

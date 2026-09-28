@@ -44,12 +44,21 @@ guests/service.py --> otp/service.py   (send + verify OTP)
 guests/service.py --> events/repository.py, events/models.py   (capacity, event lookup)
 gate/service.py   --> guests/models.py, guests/repository.py   (find registration by QR token hash)
 gate/service.py   --> events/repository.py, gate/access.py     (officer scope)
+gate/service.py, events/schemas.py --> events/timing.py          (gate window, also exposed on EventRead)
 ```
 
 `guests/admin_router.py` is mounted behind authentication like the events router, and requires the admin role.
 
 `events`, `guests` and `gate` all depend on `auth/dependencies.py` only for `CurrentUser` and
 `require_roles(...)` — none of them depend on how a user is authenticated.
+
+## Frontend gate area
+
+`frontend/src/app/gate/`: `officer-login` (email code), `assigned-events` (`GET /events`, already officer-scoped),
+and `scanner`. Browser capabilities the scanner needs (secure context, `getUserMedia`, QR decoder, vibration) sit
+behind the `SCANNER_PLATFORM` injection token in `gate/camera.ts`, so the component is testable without a camera and
+the decoder can be swapped: native `BarcodeDetector` first, `@zxing/browser` (lazy-loaded chunk) otherwise. Decoding
+is local; the backend only ever receives the pass token.
 
 ## Key design choices
 

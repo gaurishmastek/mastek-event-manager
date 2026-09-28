@@ -92,7 +92,36 @@ file calls out where current code differs from that spec.
   check-in time and gate. Other outcomes, and officers not assigned to the event (`404`), get no personal details. The response is always `200 OK`; only `admitted` means entry is
   allowed. An out-of-scope event yields `404` before a scan outcome is even produced.
 - Every scan attempt (including invalid ones) is logged in `scan_attempts`, without the raw
-  token. A successful scan also writes a `check_ins` row.
+  token. A successful scan also writes a `check_ins` row with the officer id, event id, gate, method `QR` and a
+  server-generated `checked_in_at`; the scan request cannot carry a time. Of two concurrent scans of one pass, the
+  atomic `UPDATE ... WHERE status = 'VERIFIED'` lets exactly one win; the other gets `already_checked_in` with the
+  winner's time and gate.
+- `EventRead.gate_opens_at` / `gate_closes_at` expose this window so the officer's event list can show it; the
+  backend still decides every scan.
+
+## Security officers (`app/modules/users`, `app/modules/events`, frontend `/admin/events/:id/security`)
+
+- Admins create officers (full name, email, optional Indian mobile, role `security_officer`, no password) and assign
+  them to one or more events. Creating from the event's security page assigns the new officer to that event straight
+  away; if the account is created but the assignment fails, the page offers to retry the assignment only.
+- An email or mobile already used by any staff account is refused (`409`).
+- Officers sign in at `/gate/login` with a code sent to their account email, then choose one of their assigned events
+  at `/gate/events` and scan at `/gate/scan/:eventId`. They always choose the event themselves; the app does not jump
+  to a scanner automatically, even with one assignment.
+- Unassigning takes effect on the officer's next request: the event disappears from their list, and scanning or
+  reading its entries returns `404`.
+
+## Gate scanner (frontend `/gate/scan/:eventId`)
+
+- The camera starts only after the officer taps "Allow camera and start scanning", uses the rear camera when there is
+  one, and stops when the officer stops scanning, leaves the page, changes event, signs out or the page is hidden.
+- QR codes are decoded on the device (native `BarcodeDetector`, or `@zxing/browser` where that is missing). Frames are
+  never uploaded or stored. Only a string shaped like a pass token (`[A-Za-z0-9_-]{20,128}`) is sent; anything else is
+  shown as an invalid pass without a request.
+- One request per pass: frames are ignored while a scan is in flight and while its result is on screen; the officer
+  taps "Scan next guest" to continue, and the same pass is ignored for a further 3 seconds.
+- Party details (employee id and name, guest names, party size, masked email and mobile, check-in time, gate) are
+  shown only for `admitted` and `already_checked_in`.
 - **Not yet implemented**: an admin manual check-in fallback for when scanning is unavailable
   (`event-management.md` describes this; there is no `manual-check-in` endpoint on `main` yet).
 

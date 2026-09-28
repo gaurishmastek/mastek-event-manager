@@ -26,7 +26,12 @@ bumps the user's `session_version`, revoking every earlier token.
 - The `challenge_id` from the password step is a signed token of a different type from an access
   token, so it cannot be used as one, and it is only redeemable with that login's email code.
 - Staff emails are the primary sign-in destination; staff mobiles are optional contact info only (stored as HMAC + Fernet-encrypted).
-- `POST /auth/officer/otp` answers the same for unknown email addresses and sends nothing to them.
+- `POST /auth/officer/otp` answers `202` with the same body for unknown, inactive, deleted and admin addresses and
+  sends nothing to them. A throttled request for a real officer also gets `202` (with a later
+  `resend_available_at`) rather than a `429`, since only real officers can be throttled and a `429` would reveal the
+  account. An email outage still returns `503` for a real officer, which does reveal the account while the mail
+  provider is down or the daily budget is spent.
+- The officer sign-in page keeps the code only in component memory: it is not put in the URL, browser storage or logs.
 - Deny by default: only routes in `app/main.py::PUBLIC_ROUTES` answer without a token, enforced by
   `tests/test_app.py`.
 
@@ -65,6 +70,16 @@ bumps the user's `session_version`, revoking every earlier token.
   reveals nothing about who it belongs to.
 - One pass per party. Party details (employee id and name, guest names, party size, masked email and mobile) are
   returned only to an admin or an assigned officer, and only for `admitted` or `already_checked_in` scans.
+
+## Gate camera (frontend `gate/camera.ts`, `gate/scanner.component.ts`)
+
+- The camera is requested only after an explicit tap, and only in a secure context (HTTPS, or `localhost` in
+  development); browsers refuse `getUserMedia` elsewhere. All tracks are stopped when scanning stops, on leaving the
+  page, on sign-out and when the page is hidden.
+- QR decoding runs in the browser. No frame is uploaded or stored; only the decoded token is sent, after a format
+  check. The QR holds nothing but the opaque token, so nothing in it is trusted: the backend decides the outcome.
+- Party details are shown only for `admitted` and `already_checked_in` responses; wrong-event, invalid, gate-closed
+  and out-of-scope scans show none.
 
 ## PII handling (`app/core/crypto.py`)
 
@@ -113,10 +128,11 @@ bumps the user's `session_version`, revoking every earlier token.
 
 - SPF, DKIM and DMARC on the sending domain. `EMAIL_PROVIDER=smtp` sends over STARTTLS or implicit
   TLS (`SMTP_SECURITY=none` is refused in production), but deliverability depends on the domain's DNS.
-- A Content-Security-Policy and `Permissions-Policy`. `app/main.py` already sets
-  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and `Cache-Control: no-store`
-  (plus HSTS in production), restricts CORS to `CORS_ORIGINS`, and turns off `/docs` and
-  `/openapi.json` in production.
+- A Content-Security-Policy. `app/main.py` sets `X-Content-Type-Options`, `X-Frame-Options: DENY`,
+  `Referrer-Policy`, `Cache-Control: no-store` and `Permissions-Policy: camera=(self), microphone=(), geolocation=()`
+  (plus HSTS in production), restricts CORS to `CORS_ORIGINS`, and turns off `/docs` and `/openapi.json` in
+  production. The web server that serves the Angular app must send the same `Permissions-Policy` (see
+  [`DEPLOYMENT.md`](./DEPLOYMENT.md)); the API's header does not cover the app's own pages.
 - Refresh tokens: the frontend keeps the access token in memory, so a page reload signs out.
 - Per-IP rate limiting on the password step (the per-account lockout is in place); best done at
   the reverse proxy.
