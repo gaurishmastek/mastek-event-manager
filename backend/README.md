@@ -15,15 +15,18 @@ Run the tests (SQLite in memory, no MySQL needed): `pytest`. Lint: `ruff check .
 
 ## Events API
 
-All routes live under `/api/v1/events` and require an authenticated user.
+All routes live under `/api/v1/events` and require an authenticated user. There are two roles: `admin` manages
+events, and `security_officer` can only read the events they are assigned to (rows in `officer_events`). Officer
+scope is applied inside the SQL query, and an unassigned event returns 404 so IDs can't be probed. Any other role
+gets 403.
 
 | Method | Path | Roles | Notes |
 |---|---|---|---|
-| GET | `/events` | admin, event_manager, security | `limit` (1-100, default 20), `offset`, `search` (title, 1-100 chars), `upcoming=true` |
-| POST | `/events` | admin, event_manager | Returns 201 with the event |
-| GET | `/events/{id}` | admin, event_manager, security | 404 if missing or deleted |
-| PATCH | `/events/{id}` | admin, event_manager | Partial update; only sent fields change |
-| DELETE | `/events/{id}` | admin, event_manager | Soft delete, returns 204 |
+| GET | `/events` | admin (all), security_officer (assigned only) | `limit` (1-100, default 20), `offset`, `search` (title, 1-100 chars), `upcoming=true` |
+| POST | `/events` | admin | Returns 201 with the event |
+| GET | `/events/{id}` | admin, security_officer (assigned only) | 404 if missing, deleted or not assigned |
+| PATCH | `/events/{id}` | admin | Partial update; only sent fields change |
+| DELETE | `/events/{id}` | admin | Soft delete, returns 204 |
 
 Event fields: `title` (3-200 chars, one line), `description` (optional, up to 5000), `location` (2-255 chars, one line),
 `starts_at` (must be in the future), `ends_at` (optional, not before `starts_at`), `capacity` (integer 1-100000).
@@ -43,6 +46,8 @@ requests cannot overbook an event.
 
 `app/modules/auth/dependencies.py` is a stand-in until the auth module lands: it rejects every request with 401,
 so no route is reachable without real authentication. Tests override `get_current_user`.
+The `officer_events` table is created here with `officer_id` as a plain integer; the foreign key to `users` and the
+admin endpoints to assign officers belong with the users module.
 
 ## Guest registration (public, no login)
 
@@ -79,8 +84,8 @@ real client address.
 
 | Method | Path | Roles | Notes |
 |---|---|---|---|
-| POST | `/gate/events/{id}/scan` | admin, security | `token` from the QR code, optional `gate` name |
-| GET | `/gate/events/{id}/entries` | admin, security | Checked-in guests, newest first; `limit`, `offset` |
+| POST | `/gate/events/{id}/scan` | admin, security_officer | `token` from the QR code, optional `gate` name |
+| GET | `/gate/events/{id}/entries` | admin, security_officer | Checked-in guests, newest first; `limit`, `offset` |
 
 A scan always returns 200 with a `result` for the scanner to show: `admitted`, `already_checked_in` (with when and
 at which gate), `wrong_event`, `invalid`, or `gate_closed` (scanning opens 3 hours before the start and closes at the
@@ -91,7 +96,7 @@ Check-in is a single `UPDATE ... WHERE status = 'VERIFIED'`, so two gates scanni
 admit it; a unique index on `check_ins.registration_id` backs this up. Every scan, whatever the outcome, is written to
 `scan_attempts` (never the token itself).
 
-Officers may only scan for events they are assigned to. Assignments come with the auth module; until they are wired
-into `app/modules/gate/access.py`, officers get 404 for every event and only admins can scan.
+Admins can scan for any event. Security officers can only scan for, and list entries of, events they are assigned
+to in `officer_events`; any other event returns 404.
 
 Production refuses to start with the development `SECRET_KEY` or `PII_ENCRYPTION_KEY`, or with `SMS_PROVIDER=console`.

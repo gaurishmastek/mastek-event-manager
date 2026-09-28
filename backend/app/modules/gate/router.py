@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser, require_roles
-from app.modules.gate.access import GATE_ROLES, EventScopePolicy, get_event_scope_policy
+from app.modules.gate.access import GATE_ROLES, EventScopePolicy
 from app.modules.gate.models import CheckIn, ScanResult
 from app.modules.gate.schemas import EntryPage, EntryRead, ScannedGuest, ScanRequest, ScanResponse
 from app.modules.gate.service import GateEventNotFoundError, GateService, ScanOutcome
@@ -17,11 +17,8 @@ EventId = Annotated[int, Path(ge=1, le=2_147_483_647)]
 GateUser = Annotated[CurrentUser, Depends(require_roles(*GATE_ROLES))]
 
 
-def get_gate_service(
-    db: Annotated[Session, Depends(get_db)],
-    policy: Annotated[EventScopePolicy, Depends(get_event_scope_policy)],
-) -> GateService:
-    return GateService(db, policy)
+def get_gate_service(db: Annotated[Session, Depends(get_db)]) -> GateService:
+    return GateService(db, EventScopePolicy(db))
 
 
 Service = Annotated[GateService, Depends(get_gate_service)]

@@ -1,21 +1,24 @@
 """Which events a staff member may run the gate for.
 
-Security officers must only scan for events they are assigned to. Officer-to-event
-assignment belongs to the auth module, which has not landed yet, so until it is wired in
-here officers are denied and only admins can scan. Replace `EventScopePolicy.allows`
-with a lookup of the officer's assignments when it lands.
+Admins may run any event's gate. Security officers only the events they are assigned to in
+`officer_events`; the same scope the events module applies to their reads.
 """
 
-from app.modules.auth.dependencies import CurrentUser
+from sqlalchemy.orm import Session
 
-ADMIN_ROLE = "admin"
-GATE_ROLES = (ADMIN_ROLE, "security")
+from app.modules.auth.dependencies import ROLE_ADMIN, ROLE_SECURITY_OFFICER, CurrentUser
+from app.modules.events.repository import EventRepository
+
+GATE_ROLES = (ROLE_ADMIN, ROLE_SECURITY_OFFICER)
 
 
 class EventScopePolicy:
+    def __init__(self, db: Session) -> None:
+        self.events = EventRepository(db)
+
     def allows(self, user: CurrentUser, event_id: int) -> bool:
-        return user.role == ADMIN_ROLE
-
-
-def get_event_scope_policy() -> EventScopePolicy:
-    return EventScopePolicy()
+        if user.role == ROLE_ADMIN:
+            return True
+        if user.role == ROLE_SECURITY_OFFICER:
+            return self.events.get(event_id, officer_id=user.id) is not None
+        return False

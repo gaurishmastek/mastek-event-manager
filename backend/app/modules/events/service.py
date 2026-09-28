@@ -1,9 +1,14 @@
 from datetime import datetime
 
 from app.db.mixins import utcnow
+from app.modules.auth.dependencies import ROLE_SECURITY_OFFICER, CurrentUser
 from app.modules.events.models import Event
 from app.modules.events.repository import EventRepository
 from app.modules.events.schemas import EventCreate, EventUpdate
+
+
+def _officer_scope(viewer: CurrentUser | None) -> int | None:
+    return viewer.id if viewer is not None and viewer.role == ROLE_SECURITY_OFFICER else None
 
 
 class EventNotFoundError(Exception):
@@ -24,18 +29,22 @@ class EventService:
         event = Event(**data.model_dump(), created_by=actor_id, updated_by=actor_id)
         return self.repo.add(event)
 
-    def get(self, event_id: int) -> Event:
-        event = self.repo.get(event_id)
+    def get(self, event_id: int, *, viewer: CurrentUser | None = None) -> Event:
+        """Fetch a live event. With a `viewer`, officers get 404 for events they are not assigned to."""
+        event = self.repo.get(event_id, officer_id=_officer_scope(viewer))
         if event is None:
             raise EventNotFoundError
         return event
 
-    def list(self, *, limit: int, offset: int, search: str | None, upcoming: bool) -> tuple[list[Event], int]:
+    def list(
+        self, *, viewer: CurrentUser, limit: int, offset: int, search: str | None, upcoming: bool
+    ) -> tuple[list[Event], int]:
         return self.repo.list(
             limit=limit,
             offset=offset,
             search=search,
             starts_after=utcnow() if upcoming else None,
+            officer_id=_officer_scope(viewer),
         )
 
     def update(self, event_id: int, data: EventUpdate, *, actor_id: int) -> Event:

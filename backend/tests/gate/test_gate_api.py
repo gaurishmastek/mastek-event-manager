@@ -3,8 +3,8 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import select
 
-from app.main import app
-from app.modules.gate.access import get_event_scope_policy
+from app.db.mixins import utcnow
+from app.modules.events.models import OfficerEvent
 from app.modules.gate.models import CheckIn, ScanAttempt
 from app.modules.guests.models import Registration
 
@@ -14,18 +14,13 @@ def scan(client, event_id: int, token: str, gate: str | None = "Gate 1"):
     return client.post(f"/api/v1/gate/events/{event_id}/scan", json=body)
 
 
-class AssignedEvents:
-    def __init__(self, event_ids):
-        self.event_ids = set(event_ids)
-
-    def allows(self, user, event_id):
-        return user.role == "admin" or event_id in self.event_ids
-
-
 @pytest.fixture()
-def assign_officer():
-    def _assign(*event_ids: int) -> None:
-        app.dependency_overrides[get_event_scope_policy] = lambda: AssignedEvents(event_ids)
+def assign_officer(db_session):
+    def _assign(*event_ids: int, officer_id: int = 42) -> list[OfficerEvent]:
+        rows = [OfficerEvent(officer_id=officer_id, event_id=event_id) for event_id in event_ids]
+        db_session.add_all(rows)
+        db_session.commit()
+        return rows
 
     return _assign
 
@@ -39,7 +34,7 @@ def live_event(make_event):
 @pytest.fixture()
 def officer(login_as, assign_officer, live_event):
     assign_officer(live_event.id)
-    return login_as("security", user_id=42)
+    return login_as("security_officer", user_id=42)
 
 
 # --- admitting guests ------------------------------------------------------
@@ -113,7 +108,7 @@ def test_pass_for_another_event_is_rejected_without_guest_details(
     other = make_event(starts_in=timedelta(minutes=10))
     token = issue_pass(other.id)["qr_token"]
     assign_officer(live_event.id, other.id)
-    login_as("security", user_id=42)
+    login_as("security_officer", user_id=42)
 
     body = scan(client, live_event.id, token).json()
 
@@ -134,7 +129,7 @@ def test_scanning_outside_the_gate_window(client, issue_pass, make_event, login_
     event = make_event(starts_in=timedelta(days=2))
     token = issue_pass(event.id)["qr_token"]
     assign_officer(event.id)
-    login_as("security", user_id=42)
+    login_as("security_officer", user_id=42)
 
     body = scan(client, event.id, token).json()
 
@@ -161,8 +156,9 @@ def test_scan_requires_login(client, live_event):
     assert scan(client, live_event.id, "A" * 43).status_code == 401
 
 
-def test_event_managers_cannot_scan(client, login_as, live_event):
-    login_as("event_manager")
+@pytest.mark.parametrize("role", ["guest", "event_manager", "security"])
+def test_other_roles_cannot_scan(client, login_as, live_event, role):
+    login_as(role)
 
     assert scan(client, live_event.id, "A" * 43).status_code == 403
 
@@ -177,8 +173,17 @@ def test_officer_cannot_scan_for_unassigned_event(client, issue_pass, make_event
     assert db_session.scalars(select(CheckIn)).all() == []
 
 
-def test_officers_are_denied_until_assignments_are_wired(client, login_as, live_event):
-    login_as("security")
+def test_removed_assignment_revokes_gate_access(client, login_as, assign_officer, live_event, db_session):
+    (assignment,) = assign_officer(live_event.id, officer_id=7)
+    assignment.deleted_at = utcnow()
+    db_session.commit()
+    login_as("security_officer", user_id=7)
+
+    assert scan(client, live_event.id, "A" * 43).status_code == 404
+
+
+def test_assignment_is_per_officer(client, login_as, live_event, officer):
+    login_as("security_officer", user_id=43)
 
     assert scan(client, live_event.id, "A" * 43).status_code == 404
 
@@ -191,8 +196,6 @@ def test_admin_can_scan_any_event(client, issue_pass, login_as, live_event):
 
 
 def test_deleted_event_is_404(client, live_event, officer, db_session):
-    from app.db.mixins import utcnow
-
     live_event.deleted_at = utcnow()
     db_session.commit()
 
