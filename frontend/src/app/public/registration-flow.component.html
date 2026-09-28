@@ -1,0 +1,129 @@
+<div class="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-8">
+  @switch (step()) {
+    @case ('loading') {
+      <app-spinner />
+    }
+
+    @case ('error') {
+      <app-card>
+        <div class="p-6 text-center">
+          <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+        </div>
+      </app-card>
+    }
+
+    @case ('not-open') {
+      <app-card>
+        <div class="p-6 text-center">
+          <h1 class="text-lg font-semibold">{{ event()?.title }}</h1>
+          <p class="mt-2 text-sm text-muted-foreground">Registration for this event is not open right now.</p>
+        </div>
+      </app-card>
+    }
+
+    @case ('register') {
+      <app-card>
+        <div class="space-y-4 p-6">
+          <div>
+            <h1 class="text-lg font-semibold">{{ event()?.title }}</h1>
+            <p class="text-sm text-muted-foreground">{{ event()?.location }}</p>
+            <p class="mt-1 text-xs text-muted-foreground">{{ event()?.seats_left }} seats left</p>
+          </div>
+
+          <form class="space-y-4" (ngSubmit)="submitRegistration()">
+            <div>
+              <label for="guest-name" class="mb-1 block text-sm font-medium">Your name</label>
+              <app-input id="guest-name" [ngModel]="guestName()" (ngModelChange)="guestName.set($event)" name="guestName" placeholder="Full name" />
+            </div>
+            <div>
+              <label for="mobile" class="mb-1 block text-sm font-medium">Mobile number</label>
+              <app-input
+                id="mobile"
+                type="tel"
+                inputmode="numeric"
+                [maxlength]="10"
+                [ngModel]="mobile()"
+                (ngModelChange)="mobile.set($event)"
+                name="mobile"
+                placeholder="98765 43210"
+              />
+              <p class="mt-1 text-xs text-muted-foreground">We'll send a one-time code to this number.</p>
+            </div>
+            <label class="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                class="mt-0.5 h-4 w-4 rounded border-input"
+                [ngModel]="consent()"
+                (ngModelChange)="consent.set($event)"
+                name="consent"
+              />
+              <span
+                >I agree that my name and mobile number will be used to verify my entry to this event.</span
+              >
+            </label>
+
+            @if (errorMessage()) {
+              <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+            }
+
+            <app-button type="submit" [loading]="submitting()" [disabled]="!consent() || !guestName().trim() || !mobile().trim()" class="block w-full">
+              Send code
+            </app-button>
+          </form>
+        </div>
+      </app-card>
+    }
+
+    @case ('verify') {
+      <app-card>
+        <div class="space-y-4 p-6">
+          <div>
+            <h1 class="text-lg font-semibold">Enter the code</h1>
+            <p class="text-sm text-muted-foreground">Sent to {{ otpSent()?.mobile }}</p>
+          </div>
+
+          <form class="space-y-4" (ngSubmit)="submitOtp()">
+            <app-input
+              inputmode="numeric"
+              [maxlength]="6"
+              placeholder="6-digit code"
+              [ngModel]="otpCode()"
+              (ngModelChange)="otpCode.set($event)"
+              name="otp"
+            />
+
+            @if (errorMessage()) {
+              <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+            }
+
+            <app-button type="submit" [loading]="submitting()" [disabled]="otpCode().trim().length !== 6" class="block w-full">
+              Verify
+            </app-button>
+
+            <button
+              type="button"
+              class="w-full text-center text-sm text-muted-foreground underline disabled:no-underline disabled:opacity-50"
+              [disabled]="!canResend() || submitting()"
+              (click)="resendOtp()"
+            >
+              Resend code
+            </button>
+          </form>
+        </div>
+      </app-card>
+    }
+
+    @case ('pass') {
+      <app-card>
+        <div class="space-y-4 p-6 text-center">
+          <h1 class="text-lg font-semibold">You're in, {{ pass()?.guest_name }}</h1>
+          <p class="text-sm text-muted-foreground">{{ pass()?.event?.title }}</p>
+          <div class="flex justify-center">
+            <img [src]="pass()?.qr_svg" alt="QR entry pass" class="h-48 w-48" />
+          </div>
+          <p class="text-xs text-muted-foreground">Show this QR code at the gate. Keep this page or take a screenshot.</p>
+        </div>
+      </app-card>
+    }
+  }
+</div>

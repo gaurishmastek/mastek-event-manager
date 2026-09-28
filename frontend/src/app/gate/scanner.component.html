@@ -1,0 +1,61 @@
+<div class="mx-auto min-h-screen max-w-md space-y-4 bg-secondary/30 px-4 py-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-lg font-semibold">Gate · Event #{{ eventId }}</h1>
+  </div>
+
+  <app-input placeholder="Gate name (optional, e.g. Gate 2)" [ngModel]="gate()" (ngModelChange)="gate.set($event)" name="gate" />
+
+  <div class="overflow-hidden rounded-lg border border-border bg-black">
+    @if (cameraSupported()) {
+      <video #video class="aspect-square w-full object-cover" [class.hidden]="!cameraActive()" muted playsinline></video>
+      @if (!cameraActive()) {
+        <div class="flex aspect-square w-full items-center justify-center">
+          <app-button (click)="startCamera()">Start camera</app-button>
+        </div>
+      }
+    } @else {
+      <div class="flex aspect-[3/1] w-full items-center justify-center px-4 text-center text-sm text-white/80">
+        Camera scanning isn't supported in this browser. Use manual entry below.
+      </div>
+    }
+  </div>
+
+  @if (cameraError()) {
+    <p class="text-sm text-destructive">{{ cameraError() }}</p>
+  }
+
+  <form class="flex gap-2" (ngSubmit)="submitManualToken()">
+    <app-input
+      class="flex-1"
+      placeholder="Paste or type the pass token"
+      [ngModel]="manualToken()"
+      (ngModelChange)="manualToken.set($event)"
+      name="manualToken"
+    />
+    <app-button type="submit" [loading]="scanning()" [disabled]="!manualToken().trim()">Check in</app-button>
+  </form>
+
+  @if (lastResult(); as result) {
+    <div class="rounded-lg border border-border bg-background p-4">
+      <app-badge [tone]="toneFor(result.result)">{{ result.result.replace('_', ' ') }}</app-badge>
+      <p class="mt-2 text-sm font-medium">{{ result.message }}</p>
+      @if (result.guest; as guest) {
+        <p class="text-sm text-muted-foreground">{{ guest.name }} · {{ guest.mobile }}</p>
+      }
+    </div>
+  }
+
+  <div>
+    <h2 class="mb-2 text-sm font-medium text-muted-foreground">Recent entries</h2>
+    <ul class="space-y-2">
+      @for (entry of entries(); track entry.checked_in_at + entry.guest.mobile) {
+        <li class="rounded-md border border-border bg-background px-3 py-2 text-sm">
+          <span class="font-medium">{{ entry.guest.name }}</span>
+          <span class="text-muted-foreground"> · {{ entry.guest.mobile }} · {{ entry.checked_in_at | date: 'shortTime' }}</span>
+        </li>
+      } @empty {
+        <li class="text-sm text-muted-foreground">No entries yet.</li>
+      }
+    </ul>
+  </div>
+</div>
