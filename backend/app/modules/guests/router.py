@@ -1,0 +1,149 @@
+"""Public guest endpoints. No login: guests prove who they are with an OTP sent to their mobile."""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.modules.guests.schemas import (
+    GuestPass,
+    OtpSent,
+    OtpVerify,
+    PublicEventInfo,
+    PublicEventRead,
+    RegistrationCreate,
+)
+from app.modules.guests.service import (
+    AlreadyCheckedInError,
+    EventFullError,
+    EventNotFoundError,
+    GuestRegistrationService,
+    OtpSentResult,
+    RegistrationClosedError,
+    RegistrationNotFoundError,
+)
+from app.modules.otp.service import OtpInvalidError, OtpService, OtpThrottledError, OtpUnavailableError
+from app.modules.otp.sms import SmsSender, get_sms_sender
+
+router = APIRouter(prefix="/public", tags=["public: guest registration"])
+
+EventId = Annotated[int, Path(ge=1, le=2_147_483_647)]
+RegistrationId = Annotated[str, Path(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")]
+
+
+def get_guest_service(
+    db: Annotated[Session, Depends(get_db)], sms: Annotated[SmsSender, Depends(get_sms_sender)]
+) -> GuestRegistrationService:
+    return GuestRegistrationService(db, OtpService(db, sms))
+
+
+Service = Annotated[GuestRegistrationService, Depends(get_guest_service)]
+
+
+def _client_ip(request: Request) -> str | None:
+    # Behind a reverse proxy, run uvicorn with --proxy-headers and --forwarded-allow-ips so this is the real client.
+    return request.client.host if request.client else None
+
+
+def _no_store(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+
+
+def _to_http(exc: Exception) -> HTTPException:
+    match exc:
+        case EventNotFoundError():
+            return HTTPException(status.HTTP_404_NOT_FOUND, "Event not found")
+        case RegistrationNotFoundError():
+            return HTTPException(status.HTTP_404_NOT_FOUND, "Registration not found")
+        case RegistrationClosedError():
+            return HTTPException(status.HTTP_409_CONFLICT, "Registration for this event is closed")
+        case EventFullError():
+            return HTTPException(status.HTTP_409_CONFLICT, "This event is full")
+        case AlreadyCheckedInError():
+            return HTTPException(status.HTTP_409_CONFLICT, "This pass has already been used to enter the event")
+        case OtpThrottledError(retry_after=retry_after):
+            return HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "Too many OTP requests. Please try again later.",
+                headers={"Retry-After": str(retry_after)},
+            )
+        case OtpUnavailableError():
+            return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "OTP could not be sent. Please try again later.")
+        case OtpInvalidError():
+            return HTTPException(status.HTTP_400_BAD_REQUEST, "The code is incorrect or has expired")
+    raise exc
+
+
+_SERVICE_ERRORS = (
+    EventNotFoundError,
+    RegistrationNotFoundError,
+    RegistrationClosedError,
+    EventFullError,
+    AlreadyCheckedInError,
+    OtpThrottledError,
+    OtpUnavailableError,
+    OtpInvalidError,
+)
+
+
+def _otp_sent(result: OtpSentResult) -> OtpSent:
+    return OtpSent(
+        registration_id=result.registration.public_id,
+        mobile=result.registration.mobile_masked,
+        otp_expires_at=result.otp.expires_at,
+        resend_available_at=result.otp.resend_available_at,
+    )
+
+
+@router.get("/events/{event_id}", response_model=PublicEventInfo)
+def get_event_for_registration(event_id: EventId, service: Service) -> PublicEventInfo:
+    try:
+        event, registration_open, seats_left = service.event_info(event_id)
+    except _SERVICE_ERRORS as exc:
+        raise _to_http(exc) from exc
+    return PublicEventInfo(
+        **PublicEventRead.model_validate(event).model_dump(),
+        registration_open=registration_open,
+        seats_left=seats_left,
+    )
+
+
+@router.post("/events/{event_id}/registrations", response_model=OtpSent, status_code=status.HTTP_202_ACCEPTED)
+def register_guest(
+    event_id: EventId, data: RegistrationCreate, request: Request, response: Response, service: Service
+) -> OtpSent:
+    """Start a registration (or resume one for the same mobile) and send an OTP."""
+    _no_store(response)
+    try:
+        return _otp_sent(service.register(event_id, data, ip=_client_ip(request)))
+    except _SERVICE_ERRORS as exc:
+        raise _to_http(exc) from exc
+
+
+@router.post("/registrations/{registration_id}/otp", response_model=OtpSent, status_code=status.HTTP_202_ACCEPTED)
+def resend_otp(registration_id: RegistrationId, request: Request, response: Response, service: Service) -> OtpSent:
+    _no_store(response)
+    try:
+        return _otp_sent(service.resend_otp(registration_id, ip=_client_ip(request)))
+    except _SERVICE_ERRORS as exc:
+        raise _to_http(exc) from exc
+
+
+@router.post("/registrations/{registration_id}/verify", response_model=GuestPass)
+def verify_otp(registration_id: RegistrationId, data: OtpVerify, response: Response, service: Service) -> GuestPass:
+    """Check the OTP and return the guest's QR pass. Verifying again re-issues it and voids the old QR code."""
+    _no_store(response)
+    try:
+        issued = service.verify(registration_id, data.code)
+    except _SERVICE_ERRORS as exc:
+        raise _to_http(exc) from exc
+    return GuestPass(
+        registration_id=issued.registration.public_id,
+        status=issued.registration.status,
+        guest_name=issued.registration.guest_name,
+        event=PublicEventRead.model_validate(issued.event),
+        qr_token=issued.token,
+        qr_svg=issued.qr_svg,
+        issued_at=issued.registration.qr_issued_at,
+    )
