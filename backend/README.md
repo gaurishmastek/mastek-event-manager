@@ -9,7 +9,7 @@ pip install -r requirements-dev.txt
 cp .env.example .env          # set SECRET_KEY and DATABASE_URL (MySQL)
 alembic upgrade head
 python -m app.cli create-admin --email you@example.com --name "Your Name"
-uvicorn app.main:app --reload
+SMS_PROVIDER=console uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Run the tests (SQLite in memory, no MySQL needed): `pytest`. Lint: `ruff check . && ruff format --check .`
