@@ -24,10 +24,12 @@ class Settings(BaseSettings):
 
     # Staff login.
     access_token_expire_minutes: int = Field(default=30, ge=1, le=24 * 60)
+    # Security officers sign in once per gate shift.
+    officer_session_minutes: int = Field(default=8 * 60, ge=1, le=24 * 60)
     max_failed_login_attempts: int = Field(default=5, ge=1)
     lockout_minutes: int = Field(default=15, ge=1)
     # Comma-separated list of allowed frontend origins.
-    cors_origins: Annotated[list[str], NoDecode] = []
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:4200"]
 
     # SMS delivery. "console" prints OTPs to stdout for local development and is refused in production.
     sms_provider: Literal["disabled", "console"] = "disabled"

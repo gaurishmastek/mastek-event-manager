@@ -23,7 +23,10 @@ def upgrade() -> None:
         sa.Column("full_name", sa.String(length=120), nullable=False),
         sa.Column("password_hash", sa.String(length=255), nullable=False),
         sa.Column("role", sa.Enum("admin", "security_officer", name="user_role"), nullable=False),
+        sa.Column("mobile_hash", sa.String(length=64), nullable=True),
+        sa.Column("mobile_encrypted", sa.String(length=255), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False),
+        sa.Column("session_version", sa.Integer(), nullable=False),
         sa.Column("failed_login_attempts", sa.Integer(), nullable=False),
         sa.Column("locked_until", sa.DateTime(), nullable=True),
         sa.Column("last_login_at", sa.DateTime(), nullable=True),
@@ -33,6 +36,7 @@ def upgrade() -> None:
         sa.Column("created_by", sa.Integer(), nullable=True),
         sa.Column("updated_by", sa.Integer(), nullable=True),
         sa.Column("deleted_by", sa.Integer(), nullable=True),
+        sa.UniqueConstraint("mobile_hash", name="uq_users_mobile_hash"),
     )
     op.create_index("ix_users_email", "users", ["email"], unique=True)
     op.create_index("ix_users_deleted_at", "users", ["deleted_at"])

@@ -4,10 +4,8 @@ import { environment } from '../../environments/environment';
 import type { CurrentUser } from './models';
 
 /**
- * Talks to the staff auth endpoints planned in `docs/event-management.md` (`POST /auth/...`).
- * That module is not on `main` yet (see the "Add secure login and roles" thread), so every
- * call here 401s until it lands. The access token is kept in memory only, per the spec
- * (refresh token lives in an HttpOnly cookie the backend sets).
+ * Talks to the staff auth endpoints in `backend/app/modules/auth/router.py` (`POST /auth/...`).
+ * The access token is kept in memory only, per the spec, so a page reload signs the user out.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {

@@ -48,26 +48,36 @@ requests cannot overbook an event.
 
 ## Auth and roles
 
-| Role            | Can do                                                                              |
-| --------------- | ----------------------------------------------------------------------------------- |
-| `admin`            | Create staff accounts; create, edit and delete events; assign security officers     |
-| `security_officer` | View only the events they are assigned to                                           |
+| Role               | Signs in with                                        | Can do                                                        |
+| ------------------ | ---------------------------------------------------- | ------------------------------------------------------------- |
+| `admin`            | Email and password, then a 6-digit code sent by SMS  | Create staff accounts; manage events; assign officers         |
+| `security_officer` | A 6-digit code sent by SMS to their registered mobile | View and scan only the events they are assigned to            |
 
-Guests do not get accounts; they register through the public guest form (a later module).
+Guests do not get accounts; they register through the public guest form.
+
+Create the first admin with `python -m app.cli create-admin --email ... --name ... --mobile ...`. In development set
+`SMS_PROVIDER=console`; sign-in codes are then printed in the backend's terminal.
 
 | Method | Path | Access |
 |---|---|---|
-| POST | `/api/v1/auth/login` | Public. JSON `{email, password}`, returns a bearer token |
+| POST | `/api/v1/auth/login` | Public. Admin `{email, password}`; texts a code, returns `{challenge_id, resend_available_at}` |
+| POST | `/api/v1/auth/login/verify` | Public. `{challenge_id, code}`; returns `{access_token, token_type, expires_in, user}` |
+| POST | `/api/v1/auth/officer/otp` | Public. `{mobile}`; same 202 answer whether or not the number belongs to an officer |
+| POST | `/api/v1/auth/officer/verify` | Public. `{mobile, code}`; returns a session like `/login/verify`, valid for one shift (8 hours) |
+| POST | `/api/v1/auth/logout` | Signed in. Revokes every token issued to the user so far |
 | GET | `/api/v1/auth/me` | Signed in |
-| GET, POST | `/api/v1/users` | admin |
+| GET, POST | `/api/v1/users` | admin. Officers are created with a mobile and no password |
 | GET | `/health` | Public |
+
+Sign-in codes use the same OTP service as guest registration: 5-minute expiry, 5 attempts, a resend cooldown, caps
+per number and per IP, and the daily SMS budget.
 
 Security design:
 
 - **Passwords** are hashed with Argon2id (`argon2-cffi`), salted per user, and rehashed on login when the
   recommended parameters change. Minimum 12 characters, not all letters or all digits.
-- **Tokens** are short-lived JWT access tokens (HS256, 30 minutes by default) sent as `Authorization: Bearer`.
-  `SECRET_KEY` is required and must be at least 32 characters.
+- **Tokens** are short-lived JWT access tokens (HS256; 30 minutes for admins, one 8-hour shift for officers) sent
+  as `Authorization: Bearer`. Logging out bumps the user's session version, which revokes every earlier token.
 - **Permissions are read from the database on every request**, so deactivating a user, deleting them or changing
   their role takes effect on their next request, even with a still-valid token.
 - **Deny by default.** Every router except auth is mounted behind authentication. Only routes in `PUBLIC_ROUTES`
@@ -77,9 +87,8 @@ Security design:
 - Responses carry `nosniff`, `DENY` framing, `no-referrer` and `no-store` headers (plus HSTS in production), and
   the API docs are off when `ENVIRONMENT=production`.
 
-Not yet covered, planned with the OTP module: a second factor for admin login, the security officer OTP login,
-and OTP abuse limits (attempt limit, resend cooldown, per-number and per-IP caps, daily SMS budget). Per-IP rate
-limiting on `/auth/login` is best done at the reverse proxy.
+Not yet covered: refresh tokens (the frontend keeps the access token in memory, so a page reload signs out) and
+per-IP rate limiting on the password step, which is best done at the reverse proxy.
 
 ## Guest registration (public, no login)
 

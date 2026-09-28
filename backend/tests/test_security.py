@@ -29,7 +29,7 @@ def test_verify_password():
 
 
 def test_access_token_round_trip():
-    token, expires_in = create_access_token(7, "admin")
+    token, expires_in = create_access_token(7, "admin", 0)
     claims = decode_access_token(token)
     assert claims is not None
     assert claims["sub"] == "7"

@@ -41,6 +41,9 @@ def get_current_user(
     user = get_user(db, user_id)
     if user is None or not user.is_active:
         raise _UNAUTHENTICATED
+    # Logging out bumps the session version, which revokes every token issued before it.
+    if claims["sv"] != user.session_version:
+        raise _UNAUTHENTICATED
     return user
 
 

@@ -17,6 +17,9 @@ PUBLIC_ROUTES = frozenset(
     {
         ("GET", "/health"),
         ("POST", f"{API_PREFIX}/auth/login"),
+        ("POST", f"{API_PREFIX}/auth/login/verify"),
+        ("POST", f"{API_PREFIX}/auth/officer/otp"),
+        ("POST", f"{API_PREFIX}/auth/officer/verify"),
         # Guest self-registration: guests have no accounts and prove their mobile with an OTP instead.
         ("GET", f"{API_PREFIX}/public/events/{{event_id}}"),
         ("POST", f"{API_PREFIX}/public/events/{{event_id}}/registrations"),

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Integer, String
+from sqlalchemy import Boolean, DateTime, Enum, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -17,6 +17,7 @@ class Role(enum.StrEnum):
 
 class User(AuditMixin, Base):
     __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("mobile_hash", name="uq_users_mobile_hash"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
@@ -25,7 +26,12 @@ class User(AuditMixin, Base):
     role: Mapped[Role] = mapped_column(
         Enum(Role, name="user_role", values_callable=lambda roles: [r.value for r in roles]),
     )
+    # Mobile for login OTPs: an HMAC to look the user up by number, and the number encrypted to send to.
+    mobile_hash: Mapped[str | None] = mapped_column(String(64), default=None)
+    mobile_encrypted: Mapped[str | None] = mapped_column(String(255), default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Bumped on logout; access tokens carry it and stop working once it changes.
+    session_version: Mapped[int] = mapped_column(Integer, default=0)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)

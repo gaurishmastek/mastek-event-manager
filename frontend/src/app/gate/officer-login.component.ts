@@ -11,8 +11,7 @@ type Step = 'mobile' | 'otp';
 
 /**
  * Security officer login: OTP to a pre-registered mobile, no self sign-up.
- * Calls `POST /auth/officer/otp` and `POST /auth/officer/verify`, planned but not yet on
- * `main` (see the "Add secure login and roles" thread).
+ * Calls `POST /auth/officer/otp` and `POST /auth/officer/verify`.
  */
 @Component({
   selector: 'app-officer-login',
