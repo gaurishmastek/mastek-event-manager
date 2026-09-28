@@ -5,6 +5,8 @@ from app.core.config import get_settings
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.router import router as auth_router
 from app.modules.events.router import router as events_router
+from app.modules.gate.router import router as gate_router
+from app.modules.guests.router import router as guests_router
 from app.modules.users.router import router as users_router
 
 API_PREFIX = "/api/v1"
@@ -15,6 +17,11 @@ PUBLIC_ROUTES = frozenset(
     {
         ("GET", "/health"),
         ("POST", f"{API_PREFIX}/auth/login"),
+        # Guest self-registration: guests have no accounts and prove their mobile with an OTP instead.
+        ("GET", f"{API_PREFIX}/public/events/{{event_id}}"),
+        ("POST", f"{API_PREFIX}/public/events/{{event_id}}/registrations"),
+        ("POST", f"{API_PREFIX}/public/registrations/{{registration_id}}/otp"),
+        ("POST", f"{API_PREFIX}/public/registrations/{{registration_id}}/verify"),
     }
 )
 
@@ -31,7 +38,7 @@ def create_app() -> FastAPI:
     # Interactive API docs are only exposed outside production.
     docs_url = None if settings.is_production else "/docs"
     app = FastAPI(
-        title="Mastek Event Manager",
+        title=settings.app_name,
         docs_url=docs_url,
         redoc_url=None,
         openapi_url=None if settings.is_production else "/openapi.json",
@@ -42,7 +49,7 @@ def create_app() -> FastAPI:
             CORSMiddleware,
             allow_origins=settings.cors_origins,
             allow_credentials=False,
-            allow_methods=["GET", "POST", "PATCH", "DELETE"],
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
             allow_headers=["Authorization", "Content-Type"],
         )
 
@@ -60,9 +67,11 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(auth_router, prefix=API_PREFIX)
+    app.include_router(guests_router, prefix=API_PREFIX)
     authenticated = [Depends(get_current_user)]
     app.include_router(users_router, prefix=API_PREFIX, dependencies=authenticated)
     app.include_router(events_router, prefix=API_PREFIX, dependencies=authenticated)
+    app.include_router(gate_router, prefix=API_PREFIX, dependencies=authenticated)
     return app
 
 

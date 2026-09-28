@@ -1,7 +1,6 @@
 import os
 
 # Settings are read at import time, so the test environment is set before the app loads.
-os.environ["SECRET_KEY"] = "test-secret-key-that-is-long-enough-for-hs256-signing"
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ.pop("CORS_ORIGINS", None)
 
@@ -23,6 +22,8 @@ from app.modules.users.schemas import UserCreate  # noqa: E402
 from app.modules.users.service import create_user  # noqa: E402
 
 PASSWORD = "Correct-horse-42"
+
+pytest_plugins = ["tests.guest_fixtures"]
 
 
 @pytest.fixture

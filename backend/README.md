@@ -80,3 +80,55 @@ Security design:
 Not yet covered, planned with the OTP module: a second factor for admin login, the security officer OTP login,
 and OTP abuse limits (attempt limit, resend cooldown, per-number and per-IP caps, daily SMS budget). Per-IP rate
 limiting on `/auth/login` is best done at the reverse proxy.
+
+## Guest registration (public, no login)
+
+Guests register through a public form, prove their mobile number with an OTP, and receive a single-use QR pass.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/public/events/{id}` | Event details for the form, `registration_open` and `seats_left` |
+| POST | `/public/events/{id}/registrations` | `guest_name`, `mobile` (Indian numbers only), `consent: true`. Sends an OTP, returns 202 with `registration_id` |
+| POST | `/public/registrations/{registration_id}/otp` | Resend the OTP |
+| POST | `/public/registrations/{registration_id}/verify` | `code` (6 digits). Returns the pass: `qr_token` and `qr_svg` (data URI) |
+
+- A registration only takes a seat once the mobile is verified; capacity is checked under a row lock on the event.
+  Registration closes when the event ends (or at its start time if it has no end).
+- Registering again with the same mobile resumes the same registration. Verifying again issues a new pass and voids
+  the old QR code, for a guest who lost it. A guest who has already entered cannot get a new pass.
+- The QR code holds only a random 256-bit token. The database keeps its SHA-256 hash, never the token.
+- The mobile is stored as a keyed hash (lookups), Fernet-encrypted (for sending OTPs) and masked (display).
+
+OTP rules (all configurable, see `app/core/config.py`): 6-digit codes from `secrets`, stored as an HMAC, valid
+5 minutes, 5 wrong attempts per code, a new code voids the old one, 60 s resend cooldown, 5 per mobile per hour and
+10 per day, 20 per IP per hour, and a daily SMS budget for the whole app (2000). Failed SMS sends don't count against
+the limits. Codes are never returned, logged or stored in clear. Errors: 400 wrong/expired code, 409 event full or
+closed, 429 with `Retry-After` when throttled, 503 when SMS can't be sent.
+
+SMS: `SMS_PROVIDER=disabled` (default, fails closed with 503) or `console` (prints OTPs to stdout, development only).
+A real provider plugs in by implementing `SmsSender` in `app/modules/otp/sms.py`.
+
+Put CAPTCHA in front of the registration form before going live; the caps above limit abuse but don't stop bots.
+Behind a reverse proxy, run uvicorn with `--proxy-headers --forwarded-allow-ips=<proxy>` so per-IP caps see the
+real client address.
+
+## Gate scanning
+
+| Method | Path | Roles | Notes |
+|---|---|---|---|
+| POST | `/gate/events/{id}/scan` | admin, security_officer | `token` from the QR code, optional `gate` name |
+| GET | `/gate/events/{id}/entries` | admin, security_officer | Checked-in guests, newest first; `limit`, `offset` |
+
+A scan always returns 200 with a `result` for the scanner to show: `admitted`, `already_checked_in` (with when and
+at which gate), `wrong_event`, `invalid`, or `gate_closed` (scanning opens 3 hours before the start and closes at the
+end). Only `admitted` lets the guest in. The officer sees the guest's name and masked mobile so they can ask for ID
+when a pass looks forwarded.
+
+Check-in is a single `UPDATE ... WHERE status = 'VERIFIED'`, so two gates scanning the same pass at once cannot both
+admit it; a unique index on `check_ins.registration_id` backs this up. Every scan, whatever the outcome, is written to
+`scan_attempts` (never the token itself).
+
+Admins can scan for any event. Security officers can only scan for, and list entries of, events they are assigned
+to (see `/events/{id}/officers`); any other event returns 404.
+
+Production refuses to start with the development `SECRET_KEY` or `PII_ENCRYPTION_KEY`, or with `SMS_PROVIDER=console`.
