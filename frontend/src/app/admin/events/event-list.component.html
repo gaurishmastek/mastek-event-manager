@@ -1,0 +1,46 @@
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold">Events</h1>
+    <app-button routerLink="/admin/events/new">New event</app-button>
+  </div>
+
+  @if (errorMessage()) {
+    <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+  }
+
+  @if (loading()) {
+    <app-spinner />
+  } @else if (events().length === 0) {
+    <app-card>
+      <p class="p-6 text-sm text-muted-foreground">No events yet. Create one to get started.</p>
+    </app-card>
+  } @else {
+    <app-card>
+      <table class="w-full text-sm">
+        <thead class="border-b border-border text-left text-muted-foreground">
+          <tr>
+            <th class="px-4 py-2 font-medium">Title</th>
+            <th class="px-4 py-2 font-medium">Location</th>
+            <th class="px-4 py-2 font-medium">Starts</th>
+            <th class="px-4 py-2 font-medium">Capacity</th>
+            <th class="px-4 py-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (event of events(); track event.id) {
+            <tr class="border-b border-border last:border-0">
+              <td class="px-4 py-3 font-medium">{{ event.title }}</td>
+              <td class="px-4 py-3 text-muted-foreground">{{ event.location }}</td>
+              <td class="px-4 py-3 text-muted-foreground">{{ event.starts_at | date: 'medium' }}</td>
+              <td class="px-4 py-3 text-muted-foreground">{{ event.capacity }}</td>
+              <td class="px-4 py-3 text-right">
+                <a [routerLink]="['/admin/events', event.id, 'edit']" class="mr-3 text-sm text-primary underline">Edit</a>
+                <button type="button" class="text-sm text-destructive underline" (click)="remove(event)">Delete</button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </app-card>
+  }
+</div>

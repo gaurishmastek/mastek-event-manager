@@ -1,0 +1,24 @@
+<div class="min-h-screen bg-secondary/30">
+  <header class="border-b border-border bg-background">
+    <div class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+      <div class="flex items-center gap-6">
+        <span class="text-sm font-semibold">Mastek Event Manager</span>
+        <nav class="flex gap-4 text-sm">
+          <a routerLink="/admin/events" routerLinkActive="text-primary font-medium" class="text-muted-foreground hover:text-foreground">
+            Events
+          </a>
+        </nav>
+      </div>
+      <div class="flex items-center gap-3 text-sm text-muted-foreground">
+        @if (auth.currentUser(); as user) {
+          <span>{{ user.name || 'Admin' }}</span>
+        }
+        <app-button variant="ghost" (click)="signOut()">Sign out</app-button>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-5xl px-4 py-6">
+    <router-outlet />
+  </main>
+</div>
