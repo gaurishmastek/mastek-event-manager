@@ -3,18 +3,19 @@ import { Injectable, inject } from '@angular/core';
 import { environment } from '../../environments/environment';
 import type { GuestPass, OtpSent, PublicEventInfo, RegistrationCreate } from './models';
 
-/** `backend/app/modules/guests/router.py`, mounted under `/public`. No auth — anonymous guests. */
+/** `backend/app/modules/guests/router.py`, mounted under `/public`. No auth: employees register from the event's public link. */
 @Injectable({ providedIn: 'root' })
 export class GuestsApiService {
   private readonly http = inject(HttpClient);
   private readonly base = `${environment.apiBaseUrl}/public`;
 
-  getEvent(eventId: number) {
-    return this.http.get<PublicEventInfo>(`${this.base}/events/${eventId}`);
+  /** `eventPublicId` is the event's UUID from its registration link, never the internal numeric id. */
+  getEvent(eventPublicId: string) {
+    return this.http.get<PublicEventInfo>(`${this.base}/events/${encodeURIComponent(eventPublicId)}`);
   }
 
-  register(eventId: number, payload: RegistrationCreate) {
-    return this.http.post<OtpSent>(`${this.base}/events/${eventId}/registrations`, payload);
+  register(eventPublicId: string, payload: RegistrationCreate) {
+    return this.http.post<OtpSent>(`${this.base}/events/${encodeURIComponent(eventPublicId)}/registrations`, payload);
   }
 
   resendOtp(registrationId: string) {

@@ -30,42 +30,168 @@
             <p class="mt-1 text-xs text-muted-foreground">{{ event()?.seats_left }} seats left</p>
           </div>
 
-          <form class="space-y-4" (ngSubmit)="submitRegistration()">
+          <form class="space-y-4" novalidate (ngSubmit)="submitRegistration()">
             <div>
-              <label for="guest-name" class="mb-1 block text-sm font-medium">Your name</label>
-              <app-input id="guest-name" [ngModel]="guestName()" (ngModelChange)="guestName.set($event)" name="guestName" placeholder="Full name" />
+              <label for="employee-id" class="mb-1 block text-sm font-medium">Employee ID</label>
+              <input
+                id="employee-id"
+                name="employeeId"
+                autocomplete="off"
+                maxlength="30"
+                required
+                [ngModel]="employeeId()"
+                (ngModelChange)="employeeId.set($event)"
+                (blur)="markTouched('employeeId')"
+                [attr.aria-invalid]="show('employeeId') && !!employeeIdError(employeeId())"
+                aria-describedby="employee-id-error"
+                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              @if (show('employeeId') && employeeIdError(employeeId()); as error) {
+                <p id="employee-id-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
+              }
             </div>
+
+            <div>
+              <label for="employee-name" class="mb-1 block text-sm font-medium">Your name</label>
+              <input
+                id="employee-name"
+                name="employeeName"
+                autocomplete="name"
+                maxlength="100"
+                required
+                [ngModel]="employeeName()"
+                (ngModelChange)="employeeName.set($event)"
+                (blur)="markTouched('employeeName')"
+                [attr.aria-invalid]="show('employeeName') && !!personNameError(employeeName(), 'your name')"
+                aria-describedby="employee-name-error"
+                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              @if (show('employeeName') && personNameError(employeeName(), 'your name'); as error) {
+                <p id="employee-name-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
+              }
+            </div>
+
             <div>
               <label for="email" class="mb-1 block text-sm font-medium">Email address</label>
-              <app-input
+              <input
                 id="email"
+                name="email"
                 type="email"
-                [maxlength]="254"
+                autocomplete="email"
+                maxlength="254"
+                required
                 [ngModel]="email()"
                 (ngModelChange)="email.set($event)"
-                name="email"
-                placeholder="you@example.com"
+                (blur)="markTouched('email')"
+                [attr.aria-invalid]="show('email') && !!emailError(email())"
+                aria-describedby="email-help email-error"
+                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
-              <p class="mt-1 text-xs text-muted-foreground">We'll email a one-time code to this address.</p>
+              <p id="email-help" class="mt-1 text-xs text-muted-foreground">We'll email a one-time code to this address.</p>
+              @if (show('email') && emailError(email()); as error) {
+                <p id="email-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
+              }
             </div>
+
+            <div>
+              <label for="mobile" class="mb-1 block text-sm font-medium">Mobile number</label>
+              <input
+                id="mobile"
+                name="mobile"
+                type="tel"
+                inputmode="tel"
+                autocomplete="tel-national"
+                maxlength="20"
+                required
+                placeholder="98765 43210"
+                [ngModel]="mobile()"
+                (ngModelChange)="mobile.set($event)"
+                (blur)="markTouched('mobile')"
+                [attr.aria-invalid]="show('mobile') && !!mobileError(mobile())"
+                aria-describedby="mobile-error"
+                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              @if (show('mobile') && mobileError(mobile()); as error) {
+                <p id="mobile-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
+              }
+            </div>
+
+            <div>
+              <label for="guest-count" class="mb-1 block text-sm font-medium">Number of accompanying guests</label>
+              <input
+                id="guest-count"
+                name="guestCount"
+                type="number"
+                inputmode="numeric"
+                min="0"
+                [max]="maxGuests()"
+                step="1"
+                required
+                [ngModel]="guestCount()"
+                (ngModelChange)="setGuestCount($event)"
+                (blur)="markTouched('guestCount')"
+                [attr.aria-invalid]="!!guestCountError()"
+                aria-describedby="guest-count-help guest-count-error"
+                class="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <p id="guest-count-help" class="mt-1 text-xs text-muted-foreground">
+                Not counting yourself. Up to {{ maxGuests() }}.
+              </p>
+              @if (guestCountError(); as error) {
+                <p id="guest-count-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
+              }
+            </div>
+
+            @if (!guestCountError() && guestNames().length > 0) {
+              <fieldset class="space-y-3">
+                <legend class="mb-1 text-sm font-medium">Guest names</legend>
+                @for (name of guestNames(); track $index; let i = $index) {
+                  <div>
+                    <label [for]="'guest-name-' + i" class="mb-1 block text-xs text-muted-foreground">Guest {{ i + 1 }}</label>
+                    <input
+                      [id]="'guest-name-' + i"
+                      [name]="'guestName' + i"
+                      autocomplete="off"
+                      maxlength="100"
+                      required
+                      [ngModel]="name"
+                      (ngModelChange)="setGuestName(i, $event)"
+                      (blur)="markTouched('guestName' + i)"
+                      [attr.aria-invalid]="show('guestName' + i) && !!personNameError(name, 'guest name')"
+                      [attr.aria-describedby]="'guest-name-' + i + '-error'"
+                      class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                    @if (show('guestName' + i) && personNameError(name, 'guest name'); as error) {
+                      <p [id]="'guest-name-' + i + '-error'" class="mt-1 text-xs text-destructive">{{ error }}</p>
+                    }
+                  </div>
+                }
+              </fieldset>
+            }
+
             <label class="flex items-start gap-2 text-sm">
               <input
+                id="consent"
                 type="checkbox"
                 class="mt-0.5 h-4 w-4 rounded border-input"
+                required
                 [ngModel]="consent()"
                 (ngModelChange)="consent.set($event)"
                 name="consent"
               />
-              <span
-                >I agree that my name and email address will be used to verify my entry to this event.</span
-              >
+              <span>
+                I agree that my details and my guests' names will be used to verify our entry to this event.
+              </span>
             </label>
-
-            @if (errorMessage()) {
-              <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+            @if (submitAttempted() && !consent()) {
+              <p class="text-xs text-destructive">Please agree to continue.</p>
             }
 
-            <app-button type="submit" [loading]="submitting()" [disabled]="!consent() || !guestName().trim() || !email().trim()" class="block w-full">
+            @if (errorMessage()) {
+              <p class="text-sm text-destructive" role="alert">{{ errorMessage() }}</p>
+            }
+
+            <app-button type="submit" [loading]="submitting()" [disabled]="!formValid()" class="block w-full">
               Send code
             </app-button>
           </form>
@@ -113,16 +239,42 @@
     }
 
     @case ('pass') {
-      <app-card>
-        <div class="space-y-4 p-6 text-center">
-          <h1 class="text-lg font-semibold">You're in, {{ pass()?.guest_name }}</h1>
-          <p class="text-sm text-muted-foreground">{{ pass()?.event?.title }}</p>
-          <div class="flex justify-center">
-            <img [src]="pass()?.qr_svg" alt="QR entry pass" class="h-48 w-48" />
+      @if (pass(); as p) {
+        <app-card>
+          <div class="space-y-4 p-6 text-center">
+            <h1 class="text-lg font-semibold">You're in, {{ p.employee_name }}</h1>
+            <p class="text-sm text-muted-foreground">{{ p.event.title }} · {{ p.event.location }}</p>
+            <div class="flex justify-center">
+              <img [src]="p.qr_svg" alt="QR entry pass" class="h-56 w-56" />
+            </div>
+            <div class="rounded-md bg-secondary/50 p-3 text-left text-sm">
+              <p class="font-medium">
+                This pass admits {{ p.party_size }} {{ p.party_size === 1 ? 'person' : 'people' }} once
+              </p>
+              <ul class="mt-1 list-disc pl-5 text-muted-foreground">
+                <li>{{ p.employee_name }}@if (p.employee_id) {<span> ({{ p.employee_id }})</span>}</li>
+                @for (name of p.guest_names; track $index) {
+                  <li>{{ name }}</li>
+                }
+              </ul>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              Arrive together and show this QR code at the gate. It can be scanned only once, for your whole party.
+              Download or print it now: for your security we can't show it again, but you can get a new one by
+              registering again with the same employee ID and email, which cancels this one.
+            </p>
+            <div class="flex justify-center gap-3 print:hidden">
+              <a
+                [href]="p.qr_svg"
+                [download]="passFileName()"
+                class="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+                >Download QR</a
+              >
+              <app-button variant="outline" (click)="printPass()">Print</app-button>
+            </div>
           </div>
-          <p class="text-xs text-muted-foreground">Show this QR code at the gate. Keep this page or take a screenshot.</p>
-        </div>
-      </app-card>
+        </app-card>
+      }
     }
   }
 </div>

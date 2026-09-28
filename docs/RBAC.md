@@ -41,6 +41,7 @@ Enforcement points:
 | Module | Enforcement |
 |---|---|
 | `events/repository.py` | `list()`/`get()` take an `officer_id`; when set, results are filtered to `officer_events` rows for that officer. `events/service.py` passes the viewer's id only when `viewer.role == ROLE_SECURITY_OFFICER`. |
+| `guests/admin_router.py` | `require_roles(admin)` on `GET /events/{id}/registrations`; the Angular `/admin/events/:id/registrations` route guard is only a convenience. |
 | `gate/access.py::EventScopePolicy` | `allows(user, event_id)` — `True` for any admin; for an officer, `True` only if `officer_events` has a row for `(officer_id, event_id)`. Used by both `POST /gate/events/{id}/scan` and `GET /gate/events/{id}/entries`. |
 
 An officer requesting an event (read, or gate scan/entries) they are not assigned to gets a
@@ -56,10 +57,11 @@ An officer requesting an event (read, or gate scan/entries) they are not assigne
 | `POST /gate/events/{id}/scan` | any event | assigned events only (else 404) | — |
 | `GET /gate/events/{id}/entries` | any event | assigned events only (else 404) | — |
 | `GET/PUT/DELETE /events/{id}/officers...` | ✅ | ❌ (403) | — |
+| `GET /events/{id}/registrations` (registrations list, masked contacts) | ✅ | ❌ (403, even for assigned events) | — |
 | `GET/POST /users` (staff accounts) | ✅ | ❌ (403) | — |
 | `/auth/login`, `/auth/login/verify`, `/auth/officer/otp`, `/auth/officer/verify` | public | public | — |
 | `GET /auth/me`, `POST /auth/logout` | ✅ | ✅ | — |
-| Public registration/OTP/verify endpoints (`/public/...`) | n/a | n/a | ✅, no login |
+| Public registration/OTP/verify endpoints (`/public/...`, by event `public_id`) | n/a | n/a | ✅, no login |
 
 Not yet built: editing or deactivating staff accounts via the API, an audit-log read API, and admin
 manual check-in (fallback for when scanning is unavailable) — see `event-management.md`'s

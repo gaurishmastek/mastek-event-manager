@@ -45,6 +45,16 @@ bumps the user's `session_version`, revoking every earlier token.
 - A new OTP invalidates any earlier unconsumed code for the same `(purpose, subject_ref)`.
 - **Not yet implemented**: CAPTCHA on the OTP-send step (`event-management.md` calls for one).
 
+## Registration links
+
+- Public links use the event's `public_id`, a random UUID4 generated server-side (122 bits), never the sequential
+  database id, so registration pages cannot be enumerated. The public API accepts only a UUID-shaped id and returns no
+  internal id, audit or staff fields.
+- A pending registration can be edited by anyone who submits its employee id or email again, because nothing is
+  verified yet; a verified registration can only be re-verified (pass reissue) by submitting both its employee id and
+  its email, and then only through a code sent to that email. Mismatches get a generic `409` without the masked
+  address.
+
 ## QR pass tokens (`app/modules/guests/qr.py`)
 
 - The token is `secrets.token_urlsafe(32)` — 256 bits of randomness, generated server-side.
@@ -53,6 +63,8 @@ bumps the user's `session_version`, revoking every earlier token.
   never persisted, only returned once at issuance.
 - Gate lookups go token → hash → registration; a stolen QR image without the underlying secret
   reveals nothing about who it belongs to.
+- One pass per party. Party details (employee id and name, guest names, party size, masked email and mobile) are
+  returned only to an admin or an assigned officer, and only for `admitted` or `already_checked_in` scans.
 
 ## PII handling (`app/core/crypto.py`)
 
@@ -61,9 +73,13 @@ bumps the user's `session_version`, revoking every earlier token.
   (Fernet, keyed by `pii_encryption_key`, decrypted only to send an OTP), and `email_masked`
   (`as•••@example.com`, for anything shown to staff). Full emails are never returned by any API
   response in this module.
+- Employee mobile numbers get the same treatment: `mobile_hash` (HMAC), `mobile_encrypted` (Fernet) and
+  `mobile_masked` (`98•••••210`). Nothing decrypts them today; OTPs go by email only.
+- The admin registrations list returns only masked email and mobile, never the QR token or hash, OTP data or
+  ciphertext. Guest names and employee ids are stored in clear, as the gate and admins need to read them.
 - `keyed_hash` is HMAC (not plain SHA-256) specifically because emails are relatively low-entropy —
   an unkeyed hash would be brute-forceable from a leaked table.
-- **Not yet implemented**: the scheduled retention job that anonymises `guest_name` and email
+- **Not yet implemented**: the scheduled retention job that anonymises names, guest names, email and mobile
   fields some time after the event (`event-management.md` default: 30 days). Soft-deleted rows
   currently keep their personal data indefinitely.
 
@@ -71,12 +87,14 @@ bumps the user's `session_version`, revoking every earlier token.
 
 - Every request model uses `ConfigDict(extra="forbid", str_strip_whitespace=True)` — unknown
   fields are rejected rather than silently ignored.
-- Free-text fields (`title`, `location`, `guest_name`, `gate`) reject control characters and
+- Free-text fields (`title`, `location`, `employee_name`, guest names, `gate`) reject control characters and
   embedded newlines (`events/schemas.py::_clean_single_line`), so they can't be used to inject
   log lines or break single-line display contexts.
 - `starts_at`/`ends_at` require an explicit timezone offset and are normalized to naive UTC
   server-side — no ambiguous local-time interpretation.
 - Guest email addresses are validated with `pydantic.EmailStr` before anything else touches them.
+- Employee ids are limited to letters, digits, `-`, `_` and `.`; mobiles must be valid Indian numbers; the guest
+  count must be a whole number (booleans and strings are rejected) that matches the number of guest names.
 - QR tokens are pattern-validated (`^[A-Za-z0-9_-]{20,128}$`) before a database lookup is even
   attempted.
 - All database access goes through SQLAlchemy's ORM/Core query builder — no raw string-built SQL

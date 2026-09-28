@@ -16,7 +16,8 @@
     </app-card>
   } @else {
     <app-card>
-      <table class="w-full text-sm">
+      <div class="overflow-x-auto">
+      <table class="w-full min-w-[40rem] text-sm">
         <thead class="border-b border-border text-left text-muted-foreground">
           <tr>
             <th class="px-4 py-2 font-medium">Title</th>
@@ -34,13 +35,53 @@
               <td class="px-4 py-3 text-muted-foreground">{{ event.starts_at | date: 'medium' }}</td>
               <td class="px-4 py-3 text-muted-foreground">{{ event.capacity }}</td>
               <td class="px-4 py-3 text-right">
-                <a [routerLink]="['/admin/events', event.id, 'edit']" class="mr-3 text-sm text-primary underline">Edit</a>
-                <button type="button" class="text-sm text-destructive underline" (click)="remove(event)">Delete</button>
+                <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                  <button
+                    type="button"
+                    class="text-sm text-primary underline"
+                    [attr.aria-label]="'Copy registration link for ' + event.title"
+                    (click)="copyLink(event)"
+                  >
+                    {{ copiedEventId() === event.id ? 'Copied' : 'Copy registration link' }}
+                  </button>
+                  <a
+                    [href]="linkFor(event)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-sm text-primary underline"
+                    [attr.aria-label]="'Open registration page for ' + event.title + ' in a new tab'"
+                    >Open</a
+                  >
+                  <a [routerLink]="['/admin/events', event.id, 'registrations']" class="text-sm text-primary underline"
+                    >Registrations</a
+                  >
+                  <a [routerLink]="['/admin/events', event.id, 'edit']" class="text-sm text-primary underline">Edit</a>
+                  <button type="button" class="text-sm text-destructive underline" (click)="remove(event)">Delete</button>
+                </div>
+                <span class="sr-only" aria-live="polite">{{ copiedEventId() === event.id ? 'Registration link copied' : '' }}</span>
               </td>
             </tr>
+            @if (manualCopy()?.eventId === event.id) {
+              <tr class="border-b border-border last:border-0">
+                <td colspan="5" class="px-4 pb-3">
+                  <label [for]="'link-' + event.id" class="mb-1 block text-xs text-destructive">
+                    Couldn't copy automatically. Select the link and copy it:
+                  </label>
+                  <input
+                    [id]="'link-' + event.id"
+                    type="text"
+                    readonly
+                    [value]="manualCopy()?.link"
+                    (focus)="selectAll($event.target)"
+                    class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                </td>
+              </tr>
+            }
           }
         </tbody>
       </table>
+      </div>
     </app-card>
   }
 </div>

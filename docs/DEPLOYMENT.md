@@ -46,12 +46,15 @@ alembic upgrade head
 EMAIL_PROVIDER=console uvicorn app.main:app --reload
 ```
 
-Tests: `pytest` (from `backend/`), configuration in `backend/pytest.ini`.
+Tests: `pytest` (from `backend/`), configuration in `backend/pytest.ini`. Set `TEST_MYSQL_URL` to a disposable
+MySQL database to also run the row-locking and MySQL migration tests. Frontend: `npm run build` and
+`npm run test:ci` (from `frontend/`).
 
 ## Database migrations
 
-Alembic, `backend/alembic/`, two migrations so far (`create_events`,
-`guest_passes_and_gate` — see [`DATABASE.md`](./DATABASE.md)). Every schema change must go
+Alembic, `backend/alembic/` — see [`DATABASE.md`](./DATABASE.md) for the list.
+`20260928_0004_registration_links` gives existing events a random `public_id` and keeps existing registrations and
+their passes (they count as a party of one). Every schema change must go
 through a migration; there is no `create_all()`/auto-sync path in the app itself.
 
 ## What is missing for a real deployment

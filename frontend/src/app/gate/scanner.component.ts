@@ -16,11 +16,11 @@ interface BarcodeDetectorLike {
 declare const BarcodeDetector: { new (options: { formats: string[] }): BarcodeDetectorLike } | undefined;
 
 const RESULT_TONE: Record<ScanResponse['result'], BadgeTone> = {
-  ADMITTED: 'success',
-  ALREADY_CHECKED_IN: 'warning',
-  WRONG_EVENT: 'destructive',
-  INVALID: 'destructive',
-  GATE_CLOSED: 'destructive',
+  admitted: 'success',
+  already_checked_in: 'warning',
+  wrong_event: 'destructive',
+  invalid: 'destructive',
+  gate_closed: 'destructive',
 };
 
 /**
@@ -134,14 +134,14 @@ export class ScannerComponent implements OnDestroy {
       next: (result) => {
         this.scanning.set(false);
         this.lastResult.set(result);
-        if (result.result === 'ADMITTED') {
+        if (result.result === 'admitted') {
           this.loadEntries();
         }
       },
       error: (err) => {
         this.scanning.set(false);
         this.lastResult.set({
-          result: 'INVALID',
+          result: 'invalid',
           message: apiErrorMessage(err, 'Scan failed. Try again.'),
           guest: null,
           checked_in_at: null,

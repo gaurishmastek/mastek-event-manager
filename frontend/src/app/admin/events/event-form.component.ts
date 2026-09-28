@@ -7,6 +7,9 @@ import { ButtonComponent } from '../../ui/button/button.component';
 import { CardComponent } from '../../ui/card/card.component';
 import { InputComponent } from '../../ui/input/input.component';
 
+/** Mirrors `MAX_GUESTS_PER_REGISTRATION_CAP` in `backend/app/modules/events/models.py`. */
+export const MAX_GUESTS_CAP = 10;
+
 /** `starts_at`/`ends_at` need a timezone offset (`AwareDatetime` on the backend); IST is +05:30. */
 function toApiDateTime(localValue: string): string {
   return `${localValue}:00+05:30`;
@@ -39,6 +42,7 @@ export class EventFormComponent {
   readonly startsAt = signal('');
   readonly endsAt = signal('');
   readonly capacity = signal(100);
+  readonly maxGuests = signal(5);
 
   readonly loading = signal(false);
   readonly submitting = signal(false);
@@ -56,6 +60,7 @@ export class EventFormComponent {
           this.startsAt.set(toLocalInputValue(event.starts_at));
           this.endsAt.set(event.ends_at ? toLocalInputValue(event.ends_at) : '');
           this.capacity.set(event.capacity);
+          this.maxGuests.set(event.max_guests_per_registration);
         },
         error: (err) => {
           this.loading.set(false);
@@ -65,8 +70,13 @@ export class EventFormComponent {
     }
   }
 
+  maxGuestsValid(): boolean {
+    const value = this.maxGuests();
+    return Number.isInteger(value) && value >= 0 && value <= MAX_GUESTS_CAP;
+  }
+
   submit(): void {
-    if (!this.title().trim() || !this.location().trim() || !this.startsAt()) return;
+    if (!this.title().trim() || !this.location().trim() || !this.startsAt() || !this.maxGuestsValid()) return;
     this.submitting.set(true);
     this.errorMessage.set('');
 
@@ -77,6 +87,7 @@ export class EventFormComponent {
       starts_at: toApiDateTime(this.startsAt()),
       ends_at: this.endsAt() ? toApiDateTime(this.endsAt()) : null,
       capacity: this.capacity(),
+      max_guests_per_registration: this.maxGuests(),
     };
 
     const save$ = this.isEdit ? this.api.update(Number(this.eventId), payload) : this.api.create(payload);

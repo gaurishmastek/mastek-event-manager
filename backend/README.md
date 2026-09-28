@@ -12,7 +12,9 @@ python -m app.cli create-admin --email you@example.com --name "Your Name"
 EMAIL_PROVIDER=console uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Run the tests (SQLite in memory, no MySQL needed): `pytest`. Lint: `ruff check . && ruff format --check .`
+Run the tests (SQLite in memory, no MySQL needed): `pytest`. The row-locking and MySQL migration tests in
+`tests/guests/test_capacity_mysql.py` run only when `TEST_MYSQL_URL` points at a disposable database, e.g.
+`TEST_MYSQL_URL=mysql+pymysql://root:pw@127.0.0.1:3306/events_test pytest`. Lint: `ruff check . && ruff format --check .`
 
 ## Events API
 
@@ -90,29 +92,35 @@ Security design:
 Not yet covered: refresh tokens (the frontend keeps the access token in memory, so a page reload signs out) and
 per-IP rate limiting on the password step, which is best done at the reverse proxy.
 
-## Guest registration (public, no login)
+## Employee registration (public, no login)
 
-Guests register through a public form, prove their email with an OTP, and receive a single-use QR pass.
+Every event has a random `public_id` (UUID4). Admins share its registration link, `/register/{public_id}`, from the
+event list. Employees register themselves and their accompanying guests, prove their email with an OTP, and receive
+one single-use QR pass that admits the whole party once.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/public/events/{id}` | Event details for the form, `registration_open` and `seats_left` |
-| POST | `/public/events/{id}/registrations` | `guest_name`, `email` (validated, trimmed, lowercased), `consent: true`. Sends an OTP, returns 202 with `registration_id` |
+| GET | `/public/events/{public_id}` | Event details for the form, `max_guests_per_registration`, `registration_open` and `seats_left` (people) |
+| POST | `/public/events/{public_id}/registrations` | `employee_id`, `employee_name`, `email`, `mobile` (Indian, stored as `+91XXXXXXXXXX`), `number_of_guests`, `guest_names` (exactly that many), `consent: true`. Emails an OTP, returns 202 with `registration_id` |
 | POST | `/public/registrations/{registration_id}/otp` | Resend the OTP |
-| POST | `/public/registrations/{registration_id}/verify` | `code` (6 digits). Returns the pass: `qr_token` and `qr_svg` (data URI) |
+| POST | `/public/registrations/{registration_id}/verify` | `code` (6 digits). Returns the pass: party details, `qr_token` and `qr_svg` (data URI) |
 
-- A registration only takes a seat once the email is verified; capacity is checked under a row lock on the event.
-  Registration closes when the event ends (or at its start time if it has no end).
-- Registering again with the same email (case-insensitive) resumes the same registration. Verifying again issues a new pass and voids
-  the old QR code, for a guest who lost it. A guest who has already entered cannot get a new pass.
+- A party takes `1 + number_of_guests` seats, and only once the email is verified. At verification the event row is
+  locked and the seat count re-read with a locking read, so a party is admitted whole or not at all and concurrent
+  verifications cannot oversell. Registration closes when the event ends (or at its start time if it has no end).
+- One registration per employee id (case-insensitive) and per email per event. Registering again while still pending
+  updates the details and guests and sends a new code. A verified registration is never changed from the form;
+  registering again with the same employee id and email only sends a code, and verifying it issues a new pass that
+  voids the old QR code. An employee whose party has already entered cannot get a new pass.
 - The QR code holds only a random 256-bit token. The database keeps its SHA-256 hash, never the token.
-- The email is stored as a keyed hash (lookups), Fernet-encrypted (for sending OTPs) and masked (display).
+- The email and mobile are each stored as a keyed hash, Fernet-encrypted and masked. OTPs go to the email only.
 
 OTP rules (all configurable, see `app/core/config.py`): 6-digit codes from `secrets`, stored as an HMAC, valid
 5 minutes, 5 wrong attempts per code, a new code voids the old one, 60 s resend cooldown, 5 per email per hour and
 10 per day, 20 per IP per hour, and a daily email budget for the whole app (2000). Failed email sends don't count against
 the limits. Codes are never returned, logged or stored in clear. Errors: 400 wrong/expired code, 409 event full or
-closed, 429 with `Retry-After` when throttled, 503 when email can't be sent.
+closed, 409 for a duplicate employee id or email, 422 when the party is larger than the event allows, 429 with
+`Retry-After` when throttled, 503 when email can't be sent.
 
 Email: `EMAIL_PROVIDER=disabled` (default, fails closed with 503), `console` (prints OTPs to stdout, development only),
 or `smtp` (requires SMTP server credentials). A real SMTP provider is configured with `EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`,
@@ -128,6 +136,15 @@ real client address.
 |---|---|---|---|
 | POST | `/gate/events/{id}/scan` | admin, security_officer | `token` from the QR code, optional `gate` name |
 | GET | `/gate/events/{id}/entries` | admin, security_officer | Checked-in guests, newest first; `limit`, `offset` |
+
+An admitted or already-used scan returns the party: employee id and name, guest names, party size, masked email and
+mobile (and, for a used pass, when and at which gate it entered). Invalid and wrong-event scans return none of it.
+
+## Registrations (admin)
+
+`GET /events/{id}/registrations` (admin only): `limit`, `offset`, `search` (employee id or name), `status`. Returns
+each registration's employee, masked contacts, guests, party size, status and pass/check-in times. It never returns
+the QR token or hash, OTP data, or full or encrypted contact details.
 
 A scan always returns 200 with a `result` for the scanner to show: `admitted`, `already_checked_in` (with when and
 at which gate), `wrong_event`, `invalid`, or `gate_closed` (scanning opens 3 hours before the start and closes at the

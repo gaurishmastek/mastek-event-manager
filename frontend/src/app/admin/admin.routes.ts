@@ -21,6 +21,11 @@ export const ADMIN_ROUTES: Routes = [
         loadComponent: () => import('./events/event-form.component').then((m) => m.EventFormComponent),
       },
       {
+        path: 'events/:id/registrations',
+        loadComponent: () =>
+          import('./events/event-registrations.component').then((m) => m.EventRegistrationsComponent),
+      },
+      {
         path: 'events/:id/edit',
         loadComponent: () => import('./events/event-form.component').then((m) => m.EventFormComponent),
       },

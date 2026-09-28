@@ -63,12 +63,31 @@
       />
     </div>
 
+    <div>
+      <label for="max-guests" class="mb-1 block text-sm font-medium">Guests each employee may bring</label>
+      <input
+        id="max-guests"
+        type="number"
+        min="0"
+        max="10"
+        step="1"
+        [ngModel]="maxGuests()"
+        (ngModelChange)="maxGuests.set($event)"
+        name="maxGuests"
+        aria-describedby="max-guests-help"
+        class="flex h-10 w-40 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
+      <p id="max-guests-help" class="mt-1 text-xs" [class.text-destructive]="!maxGuestsValid()" [class.text-muted-foreground]="maxGuestsValid()">
+        Accompanying guests, not counting the employee. 0 to 10.
+      </p>
+    </div>
+
     @if (errorMessage()) {
       <p class="text-sm text-destructive">{{ errorMessage() }}</p>
     }
 
     <div class="flex gap-3">
-      <app-button type="submit" [loading]="submitting()" [disabled]="!title().trim() || !location().trim() || !startsAt()">
+      <app-button type="submit" [loading]="submitting()" [disabled]="!title().trim() || !location().trim() || !startsAt() || !maxGuestsValid()">
         {{ isEdit ? 'Save changes' : 'Create event' }}
       </app-button>
       <app-button variant="outline" type="button" routerLink="/admin/events">Cancel</app-button>

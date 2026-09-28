@@ -24,7 +24,7 @@ a QR pass is issued, and a security officer scans that pass at the gate to recor
 |---|---|
 | Event CRUD | Implemented — `app/modules/events` |
 | Officer-to-event scoping | Implemented — `officer_events` table, managed through `/events/{id}/officers` |
-| Guest registration, OTP, QR pass | Implemented — `app/modules/guests`, `app/modules/otp` |
+| Registration links, employee + guest registration, OTP, QR pass | Implemented — `app/modules/guests`, `app/modules/otp`: events have a random `public_id` link (`/register/{public_id}`), one QR pass per employee party, admin registrations list |
 | Gate scanning / check-in | Implemented — `app/modules/gate` |
 | Admin login, officer login, sessions | Implemented — `app/modules/auth`, `app/modules/users`: admin password + email code, officer email code, JWT access tokens, logout. No refresh tokens yet. |
 

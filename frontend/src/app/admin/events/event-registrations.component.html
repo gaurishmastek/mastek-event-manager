@@ -1,0 +1,125 @@
+<div class="space-y-4">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <div>
+      <a routerLink="/admin/events" class="text-sm text-muted-foreground underline">Events</a>
+      <h1 class="text-xl font-semibold">Registrations{{ event() ? ' · ' + event()!.title : '' }}</h1>
+    </div>
+  </div>
+
+  <form class="flex flex-wrap items-end gap-3" (ngSubmit)="applyFilters()">
+    <div>
+      <label for="registration-search" class="mb-1 block text-xs font-medium">Employee ID or name</label>
+      <input
+        id="registration-search"
+        name="search"
+        maxlength="100"
+        [ngModel]="search()"
+        (ngModelChange)="search.set($event)"
+        class="flex h-9 w-56 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
+    </div>
+    <div>
+      <label for="registration-status" class="mb-1 block text-xs font-medium">Status</label>
+      <select
+        id="registration-status"
+        name="status"
+        [ngModel]="status()"
+        (ngModelChange)="status.set($event); applyFilters()"
+        class="flex h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <option value="">All</option>
+        @for (option of statuses; track option) {
+          <option [value]="option">{{ statusLabel(option) }}</option>
+        }
+      </select>
+    </div>
+    <app-button type="submit" variant="outline">Search</app-button>
+    @if (hasFilters()) {
+      <button type="button" class="h-9 text-sm text-muted-foreground underline" (click)="clearFilters()">Clear</button>
+    }
+  </form>
+
+  @if (errorMessage()) {
+    <div class="flex items-center gap-3" role="alert">
+      <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+      <button type="button" class="text-sm text-primary underline" (click)="load()">Retry</button>
+    </div>
+  }
+
+  @if (loading()) {
+    <app-spinner />
+  } @else if (!errorMessage() && items().length === 0) {
+    <app-card>
+      <p class="p-6 text-sm text-muted-foreground">
+        {{ hasFilters() ? 'No registrations match these filters.' : 'No registrations yet. Share the registration link to get started.' }}
+      </p>
+    </app-card>
+  } @else if (items().length > 0) {
+    <app-card>
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[56rem] text-sm">
+          <thead class="border-b border-border text-left text-muted-foreground">
+            <tr>
+              <th class="px-4 py-2 font-medium">Employee</th>
+              <th class="px-4 py-2 font-medium">Contact</th>
+              <th class="px-4 py-2 font-medium">Guests</th>
+              <th class="px-4 py-2 font-medium">Party</th>
+              <th class="px-4 py-2 font-medium">Status</th>
+              <th class="px-4 py-2 font-medium">QR pass</th>
+              <th class="px-4 py-2 font-medium">Checked in</th>
+              <th class="px-4 py-2 font-medium">Registered</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of items(); track row.registration_id) {
+              <tr class="border-b border-border align-top last:border-0">
+                <td class="px-4 py-3">
+                  <div class="font-medium">{{ row.employee_name }}</div>
+                  <div class="text-xs text-muted-foreground">{{ row.employee_id ?? '—' }}</div>
+                </td>
+                <td class="px-4 py-3 text-muted-foreground">
+                  <div>{{ row.email_masked ?? '—' }}</div>
+                  <div class="text-xs">{{ row.mobile_masked ?? '—' }}</div>
+                </td>
+                <td class="px-4 py-3 text-muted-foreground">
+                  @if (row.guest_names.length) {
+                    <ol class="list-decimal pl-4">
+                      @for (name of row.guest_names; track $index) {
+                        <li>{{ name }}</li>
+                      }
+                    </ol>
+                  } @else {
+                    None
+                  }
+                </td>
+                <td class="px-4 py-3">{{ row.party_size }}</td>
+                <td class="px-4 py-3">
+                  <app-badge [tone]="statusTone(row.status)">{{ statusLabel(row.status) }}</app-badge>
+                  @if (row.verified_at) {
+                    <div class="mt-1 text-xs text-muted-foreground">{{ utc(row.verified_at) | date: 'short' }}</div>
+                  }
+                </td>
+                <td class="px-4 py-3 text-muted-foreground">
+                  {{ row.qr_issued ? 'Issued' : 'Not issued' }}
+                  @if (row.qr_issued_at) {
+                    <div class="text-xs">{{ utc(row.qr_issued_at) | date: 'short' }}</div>
+                  }
+                </td>
+                <td class="px-4 py-3 text-muted-foreground">{{ row.checked_in_at ? (utc(row.checked_in_at) | date: 'short') : '—' }}</td>
+                <td class="px-4 py-3 text-muted-foreground">{{ utc(row.created_at) | date: 'short' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </app-card>
+
+    <div class="flex items-center justify-between text-sm text-muted-foreground">
+      <span>{{ offset() + 1 }}–{{ pageEnd() }} of {{ total() }}</span>
+      <div class="flex gap-2">
+        <app-button variant="outline" [disabled]="offset() === 0" (click)="previousPage()">Previous</app-button>
+        <app-button variant="outline" [disabled]="offset() + pageSize >= total()" (click)="nextPage()">Next</app-button>
+      </div>
+    </div>
+  }
+</div>
