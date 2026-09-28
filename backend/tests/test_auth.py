@@ -64,11 +64,15 @@ def test_officer_otp_gives_same_answer_for_unknown_addresses(client, officer, ad
     assert sent_codes() == []
 
 
-def test_officer_otp_resend_is_throttled(client, officer):
+def test_officer_otp_resend_is_throttled_without_revealing_the_account(client, officer):
     sign_in(client, officer)
+    emails_before = len(sent_codes())
     again = client.post("/api/v1/auth/officer/otp", json={"email": officer.email})
-    assert again.status_code == 429
-    assert "Retry-After" in again.headers
+    unknown = client.post("/api/v1/auth/officer/otp", json={"email": "nobody@example.com"})
+    # A 429 only real officers could get would tell a caller which addresses are officers.
+    assert again.status_code == unknown.status_code == 202
+    assert again.json().keys() == unknown.json().keys() == {"resend_available_at"}
+    assert len(sent_codes()) == emails_before
 
 
 def test_officer_wrong_code_is_rejected(client, officer):

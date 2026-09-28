@@ -13,8 +13,9 @@ admin_only = require_roles(Role.ADMIN)
 
 
 @router.get("", response_model=list[UserRead])
-def list_users(db: Session = Depends(get_db), _: User = Depends(admin_only)) -> list[User]:
-    return service.list_users(db)
+def list_users(role: Role | None = None, db: Session = Depends(get_db), _: User = Depends(admin_only)) -> list[User]:
+    """Staff accounts, optionally only one role (e.g. `?role=security_officer` for the assignment picker)."""
+    return service.list_users(db, role=role)
 
 
 @router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)

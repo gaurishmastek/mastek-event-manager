@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from sqlalchemy.exc import IntegrityError
+
 from app.db.mixins import utcnow
 from app.modules.auth.dependencies import ROLE_SECURITY_OFFICER, CurrentUser
 from app.modules.events.models import Event, OfficerEvent
@@ -84,10 +86,17 @@ class EventService:
         self.get(event_id)
         assignment = self.repo.get_assignment(event_id, officer_id)
         if assignment is None:
-            self.repo.add(
-                OfficerEvent(event_id=event_id, officer_id=officer_id, created_by=actor_id, updated_by=actor_id)
-            )
-            return
+            try:
+                self.repo.add(
+                    OfficerEvent(event_id=event_id, officer_id=officer_id, created_by=actor_id, updated_by=actor_id)
+                )
+                return
+            except IntegrityError:
+                # A concurrent request created the same assignment first (unique event/officer pair).
+                self.repo.db.rollback()
+                assignment = self.repo.get_assignment(event_id, officer_id)
+                if assignment is None:
+                    raise
         if assignment.deleted_at is not None:
             assignment.deleted_at = None
             assignment.deleted_by = None
