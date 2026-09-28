@@ -1,8 +1,11 @@
+# Postponed annotations: the `list` method would otherwise shadow the builtin in later signatures.
+from __future__ import annotations
+
 from datetime import datetime
 
 from app.db.mixins import utcnow
 from app.modules.auth.dependencies import ROLE_SECURITY_OFFICER, CurrentUser
-from app.modules.events.models import Event
+from app.modules.events.models import Event, OfficerEvent
 from app.modules.events.repository import EventRepository
 from app.modules.events.schemas import EventCreate, EventUpdate
 
@@ -71,3 +74,32 @@ class EventService:
         event.updated_at = now
         event.updated_by = actor_id
         self.repo.save(event)
+
+    def list_officer_ids(self, event_id: int) -> list[int]:
+        self.get(event_id)
+        return self.repo.list_officer_ids(event_id)
+
+    def assign_officer(self, event_id: int, officer_id: int, *, actor_id: int) -> None:
+        """Assign a security officer. The caller checks officer_id is an active security officer."""
+        self.get(event_id)
+        assignment = self.repo.get_assignment(event_id, officer_id)
+        if assignment is None:
+            self.repo.add(
+                OfficerEvent(event_id=event_id, officer_id=officer_id, created_by=actor_id, updated_by=actor_id)
+            )
+            return
+        if assignment.deleted_at is not None:
+            assignment.deleted_at = None
+            assignment.deleted_by = None
+            assignment.updated_by = actor_id
+            self.repo.save(assignment)
+
+    def unassign_officer(self, event_id: int, officer_id: int, *, actor_id: int) -> None:
+        self.get(event_id)
+        assignment = self.repo.get_assignment(event_id, officer_id)
+        if assignment is None or assignment.deleted_at is not None:
+            raise EventNotFoundError
+        assignment.deleted_at = utcnow()
+        assignment.deleted_by = actor_id
+        assignment.updated_by = actor_id
+        self.repo.save(assignment)

@@ -6,8 +6,9 @@
 cd backend
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-cp .env.example .env          # set DATABASE_URL to your MySQL database
+cp .env.example .env          # set SECRET_KEY and DATABASE_URL (MySQL)
 alembic upgrade head
+python -m app.cli create-admin --email you@example.com --name "Your Name"
 uvicorn app.main:app --reload
 ```
 
@@ -27,6 +28,9 @@ gets 403.
 | GET | `/events/{id}` | admin, security_officer (assigned only) | 404 if missing, deleted or not assigned |
 | PATCH | `/events/{id}` | admin | Partial update; only sent fields change |
 | DELETE | `/events/{id}` | admin | Soft delete, returns 204 |
+| GET | `/events/{id}/officers` | admin | User ids of assigned security officers |
+| PUT | `/events/{id}/officers/{user_id}` | admin | Assign a security officer, returns 204 |
+| DELETE | `/events/{id}/officers/{user_id}` | admin | Soft-unassign, returns 204 |
 
 Event fields: `title` (3-200 chars, one line), `description` (optional, up to 5000), `location` (2-255 chars, one line),
 `starts_at` (must be in the future), `ends_at` (optional, not before `starts_at`), `capacity` (integer 1-100000).
@@ -42,9 +46,37 @@ Records are never hard-deleted. Every row carries `created_at/by`, `updated_at/b
 Features that must respect capacity (guest registration) should call `EventRepository.get_for_update()` so concurrent
 requests cannot overbook an event.
 
-## Auth
+## Auth and roles
 
-`app/modules/auth/dependencies.py` is a stand-in until the auth module lands: it rejects every request with 401,
-so no route is reachable without real authentication. Tests override `get_current_user`.
-The `officer_events` table is created here with `officer_id` as a plain integer; the foreign key to `users` and the
-admin endpoints to assign officers belong with the users module.
+| Role            | Can do                                                                              |
+| --------------- | ----------------------------------------------------------------------------------- |
+| `admin`            | Create staff accounts; create, edit and delete events; assign security officers     |
+| `security_officer` | View only the events they are assigned to                                           |
+
+Guests do not get accounts; they register through the public guest form (a later module).
+
+| Method | Path | Access |
+|---|---|---|
+| POST | `/api/v1/auth/login` | Public. JSON `{email, password}`, returns a bearer token |
+| GET | `/api/v1/auth/me` | Signed in |
+| GET, POST | `/api/v1/users` | admin |
+| GET | `/health` | Public |
+
+Security design:
+
+- **Passwords** are hashed with Argon2id (`argon2-cffi`), salted per user, and rehashed on login when the
+  recommended parameters change. Minimum 12 characters, not all letters or all digits.
+- **Tokens** are short-lived JWT access tokens (HS256, 30 minutes by default) sent as `Authorization: Bearer`.
+  `SECRET_KEY` is required and must be at least 32 characters.
+- **Permissions are read from the database on every request**, so deactivating a user, deleting them or changing
+  their role takes effect on their next request, even with a still-valid token.
+- **Deny by default.** Every router except auth is mounted behind authentication. Only routes in `PUBLIC_ROUTES`
+  (`app/main.py`) answer without a token, and `tests/test_app.py` fails if any other route does.
+- **Login hardening.** One generic error for unknown email, wrong password, locked or disabled account; a dummy hash
+  check keeps timing the same for unknown emails; the account locks for 15 minutes after 5 failed attempts.
+- Responses carry `nosniff`, `DENY` framing, `no-referrer` and `no-store` headers (plus HSTS in production), and
+  the API docs are off when `ENVIRONMENT=production`.
+
+Not yet covered, planned with the OTP module: a second factor for admin login, the security officer OTP login,
+and OTP abuse limits (attempt limit, resend cooldown, per-number and per-IP caps, daily SMS budget). Per-IP rate
+limiting on `/auth/login` is best done at the reverse proxy.

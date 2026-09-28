@@ -30,6 +30,5 @@ class OfficerEvent(AuditMixin, Base):
     __table_args__ = (UniqueConstraint("officer_id", "event_id", name="uq_officer_events_officer_event"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    # References users.id; the foreign key is added once the users table exists.
-    officer_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    officer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), nullable=False, index=True)
