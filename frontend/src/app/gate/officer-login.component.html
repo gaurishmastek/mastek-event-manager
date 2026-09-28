@@ -1,0 +1,38 @@
+<div class="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-8">
+  <app-card>
+    <div class="space-y-4 p-6">
+      <div>
+        <h1 class="text-lg font-semibold">Security officer sign in</h1>
+        <p class="text-sm text-muted-foreground">Mastek Event Manager · Gate</p>
+      </div>
+
+      @if (step() === 'mobile') {
+        <form class="space-y-4" (ngSubmit)="requestOtp()">
+          <div>
+            <label for="mobile" class="mb-1 block text-sm font-medium">Registered mobile</label>
+            <app-input id="mobile" type="tel" inputmode="numeric" [maxlength]="10" [ngModel]="mobile()" (ngModelChange)="mobile.set($event)" name="mobile" />
+          </div>
+          <div>
+            <label for="event-id" class="mb-1 block text-sm font-medium">Event ID for this gate</label>
+            <app-input id="event-id" inputmode="numeric" [ngModel]="eventId()" (ngModelChange)="eventId.set($event)" name="eventId" placeholder="e.g. 12" />
+          </div>
+          @if (errorMessage()) {
+            <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+          }
+          <app-button type="submit" [loading]="submitting()" class="block w-full">Send code</app-button>
+        </form>
+      } @else {
+        <form class="space-y-4" (ngSubmit)="verifyOtp()">
+          <div>
+            <label for="code" class="mb-1 block text-sm font-medium">One-time code</label>
+            <app-input id="code" inputmode="numeric" [ngModel]="code()" (ngModelChange)="code.set($event)" name="code" />
+          </div>
+          @if (errorMessage()) {
+            <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+          }
+          <app-button type="submit" [loading]="submitting()" class="block w-full">Sign in</app-button>
+        </form>
+      }
+    </div>
+  </app-card>
+</div>

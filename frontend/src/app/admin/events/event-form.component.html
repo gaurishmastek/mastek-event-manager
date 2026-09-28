@@ -1,0 +1,77 @@
+<app-card>
+  <form class="max-w-lg space-y-4 p-6" (ngSubmit)="submit()">
+    <h1 class="text-lg font-semibold">{{ isEdit ? 'Edit event' : 'New event' }}</h1>
+
+    <div>
+      <label for="title" class="mb-1 block text-sm font-medium">Title</label>
+      <app-input id="title" [ngModel]="title()" (ngModelChange)="title.set($event)" name="title" placeholder="Navratri 2026" />
+    </div>
+
+    <div>
+      <label for="location" class="mb-1 block text-sm font-medium">Location</label>
+      <app-input id="location" [ngModel]="location()" (ngModelChange)="location.set($event)" name="location" placeholder="Mastek Campus, Mumbai" />
+    </div>
+
+    <div>
+      <label for="description" class="mb-1 block text-sm font-medium">Description</label>
+      <textarea
+        id="description"
+        [ngModel]="description()"
+        (ngModelChange)="description.set($event)"
+        name="description"
+        rows="3"
+        class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      ></textarea>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label for="starts-at" class="mb-1 block text-sm font-medium">Starts (IST)</label>
+        <input
+          id="starts-at"
+          type="datetime-local"
+          [ngModel]="startsAt()"
+          (ngModelChange)="startsAt.set($event)"
+          name="startsAt"
+          class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      </div>
+      <div>
+        <label for="ends-at" class="mb-1 block text-sm font-medium">Ends (IST, optional)</label>
+        <input
+          id="ends-at"
+          type="datetime-local"
+          [ngModel]="endsAt()"
+          (ngModelChange)="endsAt.set($event)"
+          name="endsAt"
+          class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      </div>
+    </div>
+
+    <div>
+      <label for="capacity" class="mb-1 block text-sm font-medium">Guest capacity</label>
+      <input
+        id="capacity"
+        type="number"
+        min="1"
+        max="100000"
+        [ngModel]="capacity()"
+        (ngModelChange)="capacity.set($event)"
+        name="capacity"
+        class="flex h-10 w-40 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
+    </div>
+
+    @if (errorMessage()) {
+      <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+    }
+
+    <div class="flex gap-3">
+      <app-button type="submit" [loading]="submitting()" [disabled]="!title().trim() || !location().trim() || !startsAt()">
+        {{ isEdit ? 'Save changes' : 'Create event' }}
+      </app-button>
+      <app-button variant="outline" type="button" routerLink="/admin/events">Cancel</app-button>
+    </div>
+  </form>
+</app-card>

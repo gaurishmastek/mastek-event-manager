@@ -1,0 +1,42 @@
+<div class="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-8">
+  <app-card>
+    <div class="space-y-4 p-6">
+      <div>
+        <h1 class="text-lg font-semibold">Admin sign in</h1>
+        <p class="text-sm text-muted-foreground">Mastek Event Manager</p>
+      </div>
+
+      @if (step() === 'password') {
+        <form class="space-y-4" (ngSubmit)="submitPassword()">
+          <div>
+            <label for="email" class="mb-1 block text-sm font-medium">Email</label>
+            <app-input id="email" type="email" [ngModel]="email()" (ngModelChange)="email.set($event)" name="email" />
+          </div>
+          <div>
+            <label for="password" class="mb-1 block text-sm font-medium">Password</label>
+            <app-input id="password" type="password" [ngModel]="password()" (ngModelChange)="password.set($event)" name="password" />
+          </div>
+          @if (errorMessage()) {
+            <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+          }
+          <app-button type="submit" [loading]="submitting()" class="block w-full">Continue</app-button>
+        </form>
+      } @else {
+        <form class="space-y-4" (ngSubmit)="submitSecondFactor()">
+          <div>
+            <label for="code" class="mb-1 block text-sm font-medium">Verification code</label>
+            <app-input id="code" inputmode="numeric" [ngModel]="code()" (ngModelChange)="code.set($event)" name="code" />
+          </div>
+          @if (errorMessage()) {
+            <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+          }
+          <app-button type="submit" [loading]="submitting()" class="block w-full">Sign in</app-button>
+        </form>
+      }
+
+      <p class="text-center text-xs text-muted-foreground">
+        Security officer? <a routerLink="/gate/login" class="underline">Sign in at the gate</a>
+      </p>
+    </div>
+  </app-card>
+</div>
