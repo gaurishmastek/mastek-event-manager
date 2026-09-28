@@ -57,6 +57,30 @@ Alembic, `backend/alembic/` — see [`DATABASE.md`](./DATABASE.md) for the list.
 their passes (they count as a party of one). Every schema change must go
 through a migration; there is no `create_all()`/auto-sync path in the app itself.
 
+## Frontend on Vercel
+
+`vercel.json` at the repository root deploys the Angular app in `frontend/` as a static site. Vercel installs and
+builds inside `frontend/`, serves `frontend/dist/frontend/browser` (Angular 19 writes the browser bundle there), and
+rewrites every path except `/api/*` to `index.html` so deep links such as `/admin` or `/register/<id>` load the app. It
+also sends the `Permissions-Policy: camera=(self)` and `X-Frame-Options: DENY` headers the gate scanner needs (see
+below).
+
+Vercel project settings: leave **Root Directory** empty (the repository root) and **Framework Preset** as "Other";
+`vercel.json` overrides the build, install and output settings.
+
+The FastAPI backend and MySQL do not run on Vercel. Host them elsewhere (any container host with MySQL 8), then point
+the frontend at them. The production build calls the relative path `/api/v1`
+(`frontend/src/environments/environment.prod.ts`), so the simplest route is a rewrite added **before** the SPA rewrite
+in `vercel.json`:
+
+```json
+{ "source": "/api/:path*", "destination": "https://<your-backend-host>/api/:path*" }
+```
+
+Vercel then proxies API calls from the same origin, so no CORS change is needed. Alternatively, set `apiBaseUrl` in
+`environment.prod.ts` to the full backend URL and add the Vercel domain to the backend's `CORS_ORIGINS`. Until either
+is done the pages load but API calls return 404.
+
 ## HTTPS and the gate camera
 
 The gate scanner uses the phone's camera (`navigator.mediaDevices.getUserMedia`), which browsers only allow on
