@@ -35,15 +35,15 @@ export class AuthService {
     });
   }
 
-  /** Officer login step 1: send an OTP to a pre-registered mobile. */
-  requestOfficerOtp(mobile: string) {
-    return this.http.post<{ resend_available_at: string }>(`${this.base}/auth/officer/otp`, { mobile });
+  /** Officer login step 1: email an OTP to a pre-registered address. */
+  requestOfficerOtp(email: string) {
+    return this.http.post<{ resend_available_at: string }>(`${this.base}/auth/officer/otp`, { email });
   }
 
   /** Officer login step 2: verify the OTP and get a shift-bound session. */
-  verifyOfficerOtp(mobile: string, code: string) {
+  verifyOfficerOtp(email: string, code: string) {
     return this.http.post<{ access_token: string; user: CurrentUser }>(`${this.base}/auth/officer/verify`, {
-      mobile,
+      email,
       code,
     });
   }

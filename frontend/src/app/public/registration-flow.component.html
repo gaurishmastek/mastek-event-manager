@@ -36,18 +36,17 @@
               <app-input id="guest-name" [ngModel]="guestName()" (ngModelChange)="guestName.set($event)" name="guestName" placeholder="Full name" />
             </div>
             <div>
-              <label for="mobile" class="mb-1 block text-sm font-medium">Mobile number</label>
+              <label for="email" class="mb-1 block text-sm font-medium">Email address</label>
               <app-input
-                id="mobile"
-                type="tel"
-                inputmode="numeric"
-                [maxlength]="10"
-                [ngModel]="mobile()"
-                (ngModelChange)="mobile.set($event)"
-                name="mobile"
-                placeholder="98765 43210"
+                id="email"
+                type="email"
+                [maxlength]="254"
+                [ngModel]="email()"
+                (ngModelChange)="email.set($event)"
+                name="email"
+                placeholder="you@example.com"
               />
-              <p class="mt-1 text-xs text-muted-foreground">We'll send a one-time code to this number.</p>
+              <p class="mt-1 text-xs text-muted-foreground">We'll email a one-time code to this address.</p>
             </div>
             <label class="flex items-start gap-2 text-sm">
               <input
@@ -58,7 +57,7 @@
                 name="consent"
               />
               <span
-                >I agree that my name and mobile number will be used to verify my entry to this event.</span
+                >I agree that my name and email address will be used to verify my entry to this event.</span
               >
             </label>
 
@@ -66,7 +65,7 @@
               <p class="text-sm text-destructive">{{ errorMessage() }}</p>
             }
 
-            <app-button type="submit" [loading]="submitting()" [disabled]="!consent() || !guestName().trim() || !mobile().trim()" class="block w-full">
+            <app-button type="submit" [loading]="submitting()" [disabled]="!consent() || !guestName().trim() || !email().trim()" class="block w-full">
               Send code
             </app-button>
           </form>
@@ -79,7 +78,7 @@
         <div class="space-y-4 p-6">
           <div>
             <h1 class="text-lg font-semibold">Enter the code</h1>
-            <p class="text-sm text-muted-foreground">Sent to {{ otpSent()?.mobile }}</p>
+            <p class="text-sm text-muted-foreground">Sent to {{ otpSent()?.email }}. Check your spam folder if it hasn't arrived.</p>
           </div>
 
           <form class="space-y-4" (ngSubmit)="submitOtp()">

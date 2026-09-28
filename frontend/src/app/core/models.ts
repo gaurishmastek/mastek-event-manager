@@ -63,13 +63,14 @@ export interface PublicEventInfo extends PublicEventRead {
 
 export interface RegistrationCreate {
   guest_name: string;
-  mobile: string;
+  email: string;
   consent: true;
 }
 
 export interface OtpSent {
   registration_id: string;
-  mobile: string;
+  /** Masked address the code was sent to, e.g. as•••@example.com */
+  email: string;
   otp_expires_at: string;
   resend_available_at: string;
 }
@@ -94,7 +95,8 @@ export type ScanResult = 'ADMITTED' | 'ALREADY_CHECKED_IN' | 'WRONG_EVENT' | 'IN
 
 export interface ScannedGuest {
   name: string;
-  mobile: string;
+  /** Masked email (or masked mobile for registrations made before OTPs moved to email). */
+  contact: string;
 }
 
 export interface ScanRequest {

@@ -1,9 +1,10 @@
-"""One-time passwords sent by SMS, with the abuse limits from the security review.
+"""One-time passwords sent by email, with the abuse limits from the security review.
 
 - 6-digit codes from `secrets`, stored only as an HMAC, valid for `otp_ttl_seconds`.
 - At most `otp_max_attempts` wrong guesses per code; a new code invalidates older ones.
-- A resend cooldown per subject, caps per mobile (hour and day) and per IP (hour), and a
-  daily SMS budget for the whole app, so the public form cannot be used for SMS pumping.
+- A resend cooldown per subject, caps per email address (hour and day) and per IP (hour), and a
+  daily email budget for the whole app, so the public form cannot be used to flood inboxes or
+  burn the sending quota.
 - Codes are never returned, logged or written to the audit trail.
 """
 
@@ -18,13 +19,20 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.crypto import keyed_hash
+from app.core.email import normalize_email
 from app.db.mixins import utcnow
+from app.modules.notifications.email import EmailDeliveryError, EmailSender
 from app.modules.otp.models import OtpChallenge
-from app.modules.otp.sms import SmsDeliveryError, SmsSender
 
 logger = logging.getLogger(__name__)
 
 GUEST_VERIFY = "GUEST_VERIFY"
+
+_SUBJECTS = {
+    GUEST_VERIFY: "Your event registration code",
+    "ADMIN_2FA": "Your admin sign-in code",
+    "OFFICER_LOGIN": "Your gate sign-in code",
+}
 
 
 class OtpError(Exception):
@@ -32,7 +40,7 @@ class OtpError(Exception):
 
 
 class OtpThrottledError(OtpError):
-    """Too many OTPs for this subject, mobile or IP. `retry_after` is in seconds."""
+    """Too many OTPs for this subject, email address or IP. `retry_after` is in seconds."""
 
     def __init__(self, retry_after: int) -> None:
         super().__init__("Too many OTP requests")
@@ -40,7 +48,7 @@ class OtpThrottledError(OtpError):
 
 
 class OtpUnavailableError(OtpError):
-    """OTPs cannot be sent right now (daily SMS budget reached or the SMS provider failed)."""
+    """OTPs cannot be sent right now (daily email budget reached or the email provider failed)."""
 
 
 class OtpInvalidError(OtpError):
@@ -61,20 +69,32 @@ def _code_hmac(purpose: str, subject_ref: str, code: str) -> str:
     return keyed_hash(f"{subject_ref}:{code}", purpose=f"otp:{purpose}")
 
 
-class OtpService:
-    def __init__(self, db: Session, sms: SmsSender) -> None:
-        self.db = db
-        self.sms = sms
+def _otp_email(purpose: str, code: str) -> tuple[str, str]:
+    minutes = max(1, settings.otp_ttl_seconds // 60)
+    body = (
+        f"Your {settings.app_name} verification code is {code}.\n\n"
+        f"It expires in {minutes} minutes and can be used once. Do not share it with anyone; "
+        "Mastek staff will never ask for it.\n\n"
+        "If you did not request this code, you can ignore this email."
+    )
+    return _SUBJECTS.get(purpose, "Your verification code"), body
 
-    def issue(self, *, purpose: str, subject_ref: str, mobile: str, ip: str | None) -> OtpIssued:
-        """Create a code and send it. Flushes but does not commit; the caller commits on success.
+
+class OtpService:
+    def __init__(self, db: Session, email: EmailSender) -> None:
+        self.db = db
+        self.email = email
+
+    def issue(self, *, purpose: str, subject_ref: str, email: str, ip: str | None) -> OtpIssued:
+        """Create a code and email it. Flushes but does not commit; the caller commits on success.
 
         Raises before writing anything when a limit is hit, so the caller can roll back.
         """
         now = utcnow()
-        mobile_hash = keyed_hash(mobile, purpose="mobile")
+        email = normalize_email(email)
+        recipient_hash = keyed_hash(email, purpose="otp-email")
         ip_hash = keyed_hash(ip, purpose="ip") if ip else None
-        self._enforce_limits(purpose, subject_ref, mobile_hash, ip_hash, now)
+        self._enforce_limits(purpose, subject_ref, recipient_hash, ip_hash, now)
 
         self.db.execute(
             update(OtpChallenge)
@@ -91,7 +111,7 @@ class OtpService:
             purpose=purpose,
             subject_ref=subject_ref,
             code_hmac=_code_hmac(purpose, subject_ref, code),
-            mobile_hash=mobile_hash,
+            recipient_hash=recipient_hash,
             ip_hash=ip_hash,
             attempts=0,
             expires_at=now + timedelta(seconds=settings.otp_ttl_seconds),
@@ -100,10 +120,11 @@ class OtpService:
         self.db.add(challenge)
         self.db.flush()
 
+        subject, body = _otp_email(purpose, code)
         try:
-            self.sms.send_otp(mobile, code)
-        except SmsDeliveryError as exc:
-            logger.warning("OTP SMS delivery failed for challenge %s: %s", challenge.id, exc)
+            self.email.send(email, subject, body)
+        except EmailDeliveryError as exc:
+            logger.warning("OTP email delivery failed for challenge %s: %s", challenge.id, exc)
             raise OtpUnavailableError("Could not send the OTP") from exc
 
         return OtpIssued(
@@ -157,7 +178,7 @@ class OtpService:
             raise OtpInvalidError
 
     def _enforce_limits(
-        self, purpose: str, subject_ref: str, mobile_hash: str, ip_hash: str | None, now: datetime
+        self, purpose: str, subject_ref: str, recipient_hash: str, ip_hash: str | None, now: datetime
     ) -> None:
         last_sent = self.db.scalar(
             select(func.max(OtpChallenge.created_at)).where(
@@ -169,15 +190,16 @@ class OtpService:
             raise OtpThrottledError(_seconds_until(last_sent + cooldown, now))
 
         hour_ago, day_ago = now - timedelta(hours=1), now - timedelta(days=1)
-        if self._count(OtpChallenge.mobile_hash == mobile_hash, since=hour_ago) >= settings.otp_max_per_mobile_per_hour:
+        same_address = OtpChallenge.recipient_hash == recipient_hash
+        if self._count(same_address, since=hour_ago) >= settings.otp_max_per_email_per_hour:
             raise OtpThrottledError(3600)
-        if self._count(OtpChallenge.mobile_hash == mobile_hash, since=day_ago) >= settings.otp_max_per_mobile_per_day:
+        if self._count(same_address, since=day_ago) >= settings.otp_max_per_email_per_day:
             raise OtpThrottledError(86400)
         if ip_hash and self._count(OtpChallenge.ip_hash == ip_hash, since=hour_ago) >= settings.otp_max_per_ip_per_hour:
             raise OtpThrottledError(3600)
-        if self._count(since=day_ago) >= settings.sms_daily_budget:
-            logger.error("Daily SMS budget of %s reached; OTP sending is paused", settings.sms_daily_budget)
-            raise OtpUnavailableError("Daily SMS budget reached")
+        if self._count(since=day_ago) >= settings.email_daily_budget:
+            logger.error("Daily email budget of %s reached; OTP sending is paused", settings.email_daily_budget)
+            raise OtpUnavailableError("Daily email budget reached")
 
     def _count(self, *conditions, since: datetime) -> int:
         stmt = select(func.count()).select_from(OtpChallenge).where(OtpChallenge.created_at > since, *conditions)

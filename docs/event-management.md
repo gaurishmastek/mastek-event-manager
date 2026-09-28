@@ -4,8 +4,8 @@ Status: draft, 2026-09-28. This is the primary spec for the app. Where it and th
 disagree, the gaps are listed in [Open decisions](#open-decisions).
 
 Mastek runs festival events in Mumbai (Navratri, Diwali and similar). Admins create an event
-with a guest capacity, guests register through a public form and verify their mobile with an
-OTP, they receive a QR pass, and security officers scan that pass at the gate to record entry.
+with a guest capacity, guests register through a public form and verify their email with OTP,
+they receive a QR pass, and security officers scan that pass at the gate to record entry.
 
 ```text
 Admin creates event → sets capacity → public registration form → guest verifies by OTP
@@ -22,7 +22,7 @@ There are two staff roles with accounts and one anonymous actor.
 | Role | How they sign in | What they can do |
 |---|---|---|
 | **Admin** | Password (Argon2id) plus a second factor (OTP or TOTP) | Everything: events, capacity, officer accounts, officer-to-event assignment, guest lists, reports, exports, audit log, manual check-in |
-| **Security officer** | OTP to a pre-registered mobile; no self sign-up | See and scan only the events they are assigned to |
+| **Security officer** | OTP to a pre-registered email; no self sign-up | See and scan only the events they are assigned to |
 | **Guest** | No account. An OTP-verified session scoped to one registration | Register, verify, view or cancel their own registration and QR pass |
 
 Permission matrix (backend enforced, default deny):
@@ -34,7 +34,7 @@ Permission matrix (backend enforced, default deny):
 | List events | all | assigned only | published events via public API |
 | View guest list, reports, exports | ✅ | ❌ | ❌ |
 | Scan QR and check a guest in | ✅ | assigned events only | ❌ |
-| See scanned guest's name and masked mobile | ✅ | on scan only | ❌ |
+| See scanned guest's name and masked email | ✅ | on scan only | ❌ |
 | Manual check-in (gate fallback) | ✅ | ❌ | ❌ |
 | View or cancel own registration and pass | ❌ | ❌ | own only |
 | Read audit log | ✅ | ❌ | ❌ |
@@ -57,14 +57,14 @@ Rules:
 - Registration closes at event end, or earlier if the admin closes it.
 
 ### Registration and OTP
-- The public form collects the minimum: guest name, Indian mobile (`+91`, 10 digits starting
-  6 to 9), party size (default 1, admin-set maximum per event), and a consent checkbox with a
+- The public form collects the minimum: guest name, email (validated, trimmed, lowercased),
+  party size (default 1, admin-set maximum per event), and a consent checkbox with a
   short privacy notice. Consent time is stored.
 - A new registration starts as `PENDING_OTP` and holds no seat. It expires after 10 minutes
   if not verified.
-- One active registration per mobile per event.
+- One active registration per email per event.
 - OTP: 6 digits from `secrets`, stored only as an HMAC, valid 5 minutes, 5 wrong attempts
-  then invalid, 60 second resend cooldown, caps per mobile, per IP and a global daily SMS
+  then invalid, 60 second resend cooldown, caps per email, per IP and a global daily email
   budget. A new OTP invalidates older ones for the same purpose. OTPs are never returned in a
   response, logged or audited.
 - CAPTCHA on the "send OTP" step.
@@ -92,26 +92,26 @@ VERIFIED    → CANCELLED   (guest or admin; seat released)
 - One atomic update: `status = CHECKED_IN` only where the token hash matches, the event is the
   officer's assigned event, and the status is `VERIFIED`. A unique constraint on
   `check_ins.registration_id` is the final guarantee against double entry.
-- Scan outcomes shown to the officer: `OK` (with guest name, masked mobile and party size),
+- Scan outcomes shown to the officer: `OK` (with guest name, masked email and party size),
   `ALREADY_CHECKED_IN` (with time and gate), `WRONG_EVENT`, `NOT_YET_VALID`, `EXPIRED`,
   `CANCELLED`, `UNKNOWN`.
 - Every scan attempt is logged, without the raw token.
-- If scanning or SMS is down, the gate fails closed. The fallback is an admin-only manual
-  check-in by name and masked mobile, recorded with `method = MANUAL`.
+- If scanning or email is down, the gate fails closed. The fallback is an admin-only manual
+  check-in by name and masked email, recorded with `method = MANUAL`.
 
 ### Data retention and soft delete
 - No hard deletes. Every table carries `created_at/by`, `updated_at/by`, `deleted_at/by`, and
   queries exclude soft-deleted rows.
-- Guest personal data (name, mobile) is anonymised a set number of days after the event ends
+- Guest personal data (name, email) is anonymised a set number of days after the event ends
   (default 30). The registration row stays for counts and audit; only the personal fields are
   nulled. This satisfies India's DPDP Act while keeping the "no permanent deletion" rule.
-- Mobiles are shown masked (`98•••••210`) everywhere except when sending an OTP.
+- Emails are shown masked (`as•••@example.com`) everywhere except when sending an OTP.
 
 ### Audit trail
 Append-only audit entries for: event create, edit, cancel, delete and capacity change;
 officer account and assignment changes; logins (success and failure); OTP sends and failures;
 every scan outcome; manual check-ins; exports. Each entry records actor, action, target,
-outcome, request ID and UTC timestamp. OTPs, QR tokens, passwords, JWTs and full mobiles are
+outcome, request ID and UTC timestamp. OTPs, QR tokens, passwords, JWTs and full emails are
 never written to logs or audit.
 
 ## 3. Data model
@@ -121,10 +121,10 @@ have the audit columns from `app/db/mixins.py::AuditMixin` unless marked append-
 
 | Table | Key columns | Notes |
 |---|---|---|
-| `users` | id, role (`admin`, `security_officer`), name, email (admins), mobile_hash, mobile_enc, password_hash (admins), status (`ACTIVE`, `INACTIVE`, `LOCKED`), failed_logins | Staff only. Guests are not users. |
+| `users` | id, role (`admin`, `security_officer`), name, email, mobile_hash, mobile_enc (contact info only), password_hash (admins), status (`ACTIVE`, `INACTIVE`, `LOCKED`), failed_logins | Staff only. Guests are not users. |
 | `officer_events` | officer_id, event_id | Officer scope. Unique (officer_id, event_id). |
 | `events` | id, public_id (UUID), title, description, location, starts_at, ends_at, capacity, max_party_size, registered_count, status | `capacity > 0`, `ends_at >= starts_at`, `registered_count <= capacity`. |
-| `registrations` | id, public_id (UUID), event_id, guest_name, mobile_hash, mobile_enc, party_size, status, consent_at, verified_at, expires_at, anonymised_at | Unique (event_id, mobile_hash) for active rows. |
+| `registrations` | id, public_id (UUID), event_id, guest_name, email_hash, email_enc, mobile_hash, mobile_enc (legacy), party_size, status, consent_at, verified_at, expires_at, anonymised_at | Unique (event_id, email_hash) for active rows. Legacy mobile columns kept for pre-migration registrations. |
 | `qr_passes` | id, registration_id, token_hash (unique), valid_from, valid_until, revoked_at | One active pass per registration. |
 | `otp_challenges` | id, purpose (`GUEST_VERIFY`, `OFFICER_LOGIN`, `ADMIN_2FA`), subject_ref, code_hmac, expires_at, attempts, consumed_at | Append-only. |
 | `check_ins` | id, registration_id (unique), event_id, officer_id, gate, method (`QR`, `MANUAL`), checked_in_at | Append-only entry log. |
@@ -145,7 +145,7 @@ FastAPI, versioned under `/api/v1`. JSON only. Errors use one envelope:
 |---|---|---|
 | `POST /auth/login` | public, rate limited | Admin email and password, then returns a 2FA challenge |
 | `POST /auth/login/verify` | public, rate limited | Admin second factor, issues tokens |
-| `POST /auth/officer/otp` | public, rate limited | Sends login OTP to a registered officer mobile; same response whether or not the number exists |
+| `POST /auth/officer/otp` | public, rate limited | Sends login OTP to a registered officer email; same response whether or not the address exists |
 | `POST /auth/officer/verify` | public, rate limited | Verifies officer OTP, issues a shift-bound session |
 | `POST /auth/refresh` | refresh cookie + CSRF header | Rotates the refresh session |
 | `POST /auth/logout` | staff | Revokes the session |
@@ -173,7 +173,7 @@ Access tokens are short-lived (≤ 30 min) and kept in memory. Refresh tokens li
 | `PATCH /events/{id}` | admin | Partial update, capacity rule applies |
 | `POST /events/{id}/publish`, `/close`, `/cancel` | admin | Status changes |
 | `DELETE /events/{id}` | admin | Soft delete |
-| `GET /events/{id}/registrations` | admin | Guest list, masked mobiles, filter by status |
+| `GET /events/{id}/registrations` | admin | Guest list, masked emails, filter by status |
 | `POST /events/{id}/registrations/{rid}/cancel` | admin | Cancel and release seat |
 | `GET /events/{id}/check-ins` | admin | Entry log |
 | `GET /events/{id}/stats` | admin; officer if assigned | Capacity, verified, checked in |
@@ -221,14 +221,14 @@ The detailed threat model is the security design review
   `Permissions-Policy: camera=(self)`; HTTPS everywhere (the camera scanner needs it).
 - FastAPI `/docs` and `/openapi.json` off in production.
 - CI runs tests, lint, `pip-audit`, `bandit` and `gitleaks`; Dependabot on.
-- Alerts on SMS spend near budget, OTP failure spikes, repeated invalid scans and login
+- Alerts on email send failures near budget, OTP failure spikes, repeated invalid scans and login
   failure spikes.
 
 ## 6. Build order
 
 1. Auth and roles: admin login, officer accounts, officer-to-event assignment, default deny.
 2. Events: CRUD, status, capacity (draft PR #1 covers most of the CRUD).
-3. OTP service with a dev-only console provider and a real SMS adapter (TRAI DLT registered).
+3. OTP service with a dev-only console provider and real SMTP integration.
 4. Public registration with atomic capacity.
 5. QR pass issuance, then gate scanning and check-in.
 6. Admin dashboard, reports and export.
@@ -249,5 +249,5 @@ is listed first.
    `security` user list and read all events; this changes once officer assignment lands.
 3. **Event status and public ID.** Not in draft PR #1 yet; needed before the public form.
 4. **Retention period** for guest personal data: 30 days after the event, to be confirmed.
-5. **Admin second factor:** SMS OTP or authenticator app (TOTP). Spec allows either.
+5. **Admin second factor:** decided: a 6-digit code emailed to the admin's account address. TOTP could be added later.
 6. **Party size:** whether guests can bring companions on one pass, and the default maximum.

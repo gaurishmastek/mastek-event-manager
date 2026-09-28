@@ -16,10 +16,10 @@ class RegistrationRepository:
         stmt = select(Registration).where(Registration.public_id == public_id, Registration.deleted_at.is_(None))
         return self.db.scalars(stmt).first()
 
-    def get_by_event_and_mobile(self, event_id: int, mobile_hash: str) -> Registration | None:
+    def get_by_event_and_email(self, event_id: int, email_hash: str) -> Registration | None:
         stmt = select(Registration).where(
             Registration.event_id == event_id,
-            Registration.mobile_hash == mobile_hash,
+            Registration.email_hash == email_hash,
             Registration.deleted_at.is_(None),
         )
         return self.db.scalars(stmt).first()

@@ -12,7 +12,7 @@ import { SpinnerComponent } from '../ui/spinner/spinner.component';
 type Step = 'loading' | 'not-open' | 'register' | 'verify' | 'pass' | 'error';
 
 /**
- * Public, no-login guest flow: view event → register (name, mobile, consent) → verify OTP
+ * Public, no-login guest flow: view event → register (name, email, consent) → verify OTP
  * → QR pass. Mirrors `backend/app/modules/guests/router.py`.
  */
 @Component({
@@ -33,7 +33,7 @@ export class RegistrationFlowComponent {
 
   readonly event = signal<PublicEventInfo | null>(null);
   readonly guestName = signal('');
-  readonly mobile = signal('');
+  readonly email = signal('');
   readonly consent = signal(false);
 
   readonly otpSent = signal<OtpSent | null>(null);
@@ -60,7 +60,7 @@ export class RegistrationFlowComponent {
   }
 
   submitRegistration(): void {
-    if (!this.consent() || !this.guestName().trim() || !this.mobile().trim()) {
+    if (!this.consent() || !this.guestName().trim() || !this.email().trim()) {
       return;
     }
     this.submitting.set(true);
@@ -68,7 +68,7 @@ export class RegistrationFlowComponent {
     this.guests
       .register(this.eventId, {
         guest_name: this.guestName().trim(),
-        mobile: this.mobile().trim(),
+        email: this.email().trim(),
         consent: true,
       })
       .subscribe({

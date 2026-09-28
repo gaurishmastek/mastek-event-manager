@@ -26,7 +26,8 @@ class User(AuditMixin, Base):
     role: Mapped[Role] = mapped_column(
         Enum(Role, name="user_role", values_callable=lambda roles: [r.value for r in roles]),
     )
-    # Mobile for login OTPs: an HMAC to look the user up by number, and the number encrypted to send to.
+    # Sign-in codes go to `email`. The mobile is optional contact info only: an HMAC for uniqueness and
+    # the number encrypted at rest.
     mobile_hash: Mapped[str | None] = mapped_column(String(64), default=None)
     mobile_encrypted: Mapped[str | None] = mapped_column(String(255), default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -15,8 +15,8 @@ from app.modules.auth.schemas import (
     SessionResponse,
 )
 from app.modules.auth.service import AuthService
+from app.modules.notifications.email import EmailSender, get_email_sender
 from app.modules.otp.service import OtpService, OtpThrottledError, OtpUnavailableError
-from app.modules.otp.sms import SmsSender, get_sms_sender
 from app.modules.users.models import User
 from app.modules.users.schemas import UserRead
 
@@ -24,9 +24,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def get_auth_service(
-    db: Annotated[Session, Depends(get_db)], sms: Annotated[SmsSender, Depends(get_sms_sender)]
+    db: Annotated[Session, Depends(get_db)], email: Annotated[EmailSender, Depends(get_email_sender)]
 ) -> AuthService:
-    return AuthService(db, OtpService(db, sms))
+    return AuthService(db, OtpService(db, email))
 
 
 Service = Annotated[AuthService, Depends(get_auth_service)]
@@ -50,7 +50,7 @@ def _otp_http_error(exc: OtpThrottledError | OtpUnavailableError) -> HTTPExcepti
 
 @router.post("/login", response_model=LoginChallenge)
 def login(data: LoginRequest, request: Request, service: Service) -> LoginChallenge:
-    """Admin step 1: email and password. Texts a code to the admin's mobile."""
+    """Admin step 1: email and password. Emails a code to the admin's address."""
     try:
         challenge_id, resend_at = service.start_admin_login(data.email, data.password, ip=_client_ip(request))
     except (OtpThrottledError, OtpUnavailableError) as exc:
@@ -60,15 +60,15 @@ def login(data: LoginRequest, request: Request, service: Service) -> LoginChalle
 
 @router.post("/login/verify", response_model=SessionResponse)
 def login_verify(data: LoginVerifyRequest, service: Service) -> SessionResponse:
-    """Admin step 2: the code from the SMS."""
+    """Admin step 2: the code from the email."""
     return service.finish_admin_login(data.challenge_id, data.code)
 
 
 @router.post("/officer/otp", response_model=OfficerOtpSent, status_code=status.HTTP_202_ACCEPTED)
 def officer_otp(data: OfficerOtpRequest, request: Request, service: Service) -> OfficerOtpSent:
-    """Officer step 1. Answers the same whether or not the number belongs to an officer."""
+    """Officer step 1. Answers the same whether or not the address belongs to an officer."""
     try:
-        resend_at = service.send_officer_code(data.mobile, ip=_client_ip(request))
+        resend_at = service.send_officer_code(data.email, ip=_client_ip(request))
     except (OtpThrottledError, OtpUnavailableError) as exc:
         raise _otp_http_error(exc) from exc
     return OfficerOtpSent(resend_available_at=resend_at)
@@ -76,7 +76,7 @@ def officer_otp(data: OfficerOtpRequest, request: Request, service: Service) -> 
 
 @router.post("/officer/verify", response_model=SessionResponse)
 def officer_verify(data: OfficerVerifyRequest, service: Service) -> SessionResponse:
-    return service.finish_officer_login(data.mobile, data.code)
+    return service.finish_officer_login(data.email, data.code)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

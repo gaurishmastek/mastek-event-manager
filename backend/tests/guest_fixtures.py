@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 
 import pytest
@@ -6,20 +7,24 @@ from app.core.config import settings
 from app.db.mixins import utcnow
 from app.main import app
 from app.modules.events.models import Event
-from app.modules.otp.sms import SmsDeliveryError, get_sms_sender
+from app.modules.notifications.email import EmailDeliveryError, get_email_sender
 
 
-class FakeSms:
-    """Captures OTPs instead of sending them."""
+class FakeMailbox:
+    """Captures emails instead of sending them. `sent` holds (address, OTP code) pairs."""
 
     def __init__(self) -> None:
-        self.sent: list[tuple[str, str]] = []
+        self.messages: list[tuple[str, str, str]] = []
         self.fail = False
 
-    def send_otp(self, mobile: str, code: str) -> None:
+    def send(self, to: str, subject: str, body: str) -> None:
         if self.fail:
-            raise SmsDeliveryError("provider down")
-        self.sent.append((mobile, code))
+            raise EmailDeliveryError("provider down")
+        self.messages.append((to, subject, body))
+
+    @property
+    def sent(self) -> list[tuple[str, str]]:
+        return [(to, re.search(r"\b(\d{6})\b", body).group(1)) for to, _, body in self.messages]
 
     @property
     def last_code(self) -> str:
@@ -27,9 +32,9 @@ class FakeSms:
 
 
 @pytest.fixture()
-def sms():
-    fake = FakeSms()
-    app.dependency_overrides[get_sms_sender] = lambda: fake
+def mailbox():
+    fake = FakeMailbox()
+    app.dependency_overrides[get_email_sender] = lambda: fake
     yield fake
 
 
@@ -68,23 +73,23 @@ def make_event(db_session):
 
 @pytest.fixture()
 def register(client):
-    def _register(event_id: int, mobile: str = "98765 43210", name: str = "Asha Patil", **extra):
-        body = {"guest_name": name, "mobile": mobile, "consent": True, **extra}
+    def _register(event_id: int, email: str = "asha.patil@example.com", name: str = "Asha Patil", **extra):
+        body = {"guest_name": name, "email": email, "consent": True, **extra}
         return client.post(f"/api/v1/public/events/{event_id}/registrations", json=body)
 
     return _register
 
 
 @pytest.fixture()
-def issue_pass(client, sms, register, otp_limits):
+def issue_pass(client, mailbox, register, otp_limits):
     """Register and verify a guest; returns the pass JSON."""
     otp_limits(otp_resend_cooldown_seconds=0)
 
-    def _issue(event_id: int, mobile: str = "98765 43210", name: str = "Asha Patil") -> dict:
-        started = register(event_id, mobile=mobile, name=name)
+    def _issue(event_id: int, email: str = "asha.patil@example.com", name: str = "Asha Patil") -> dict:
+        started = register(event_id, email=email, name=name)
         assert started.status_code == 202, started.text
         verified = client.post(
-            f"/api/v1/public/registrations/{started.json()['registration_id']}/verify", json={"code": sms.last_code}
+            f"/api/v1/public/registrations/{started.json()['registration_id']}/verify", json={"code": mailbox.last_code}
         )
         assert verified.status_code == 200, verified.text
         return verified.json()

@@ -18,8 +18,8 @@ require no authentication at all, only a verified OTP (see [`API.md`](./API.md))
 Staff sign in through `app/modules/auth` (see [`API.md`](./API.md#staff-auth--appmodulesauthrouterpy)):
 
 - **Admin**: email and password (Argon2id, lockout after repeated failures), then a 6-digit code
-  texted to their registered mobile.
-- **Security officer**: a 6-digit code texted to their registered mobile. Officers have no password.
+  emailed to their account email.
+- **Security officer**: a 6-digit code emailed to their account email. Officers have no password.
 
 Both steps return a short-lived JWT access token. `get_current_user()` re-reads the user on every
 request, so deactivation, deletion or a role change applies immediately, and `POST /auth/logout`

@@ -11,7 +11,7 @@ type Step = 'password' | 'second-factor';
 
 /**
  * Admin login: password, then a second factor (OTP or TOTP per the spec).
- * Calls `POST /auth/login` (password, which texts a 6-digit code to the admin's mobile) and
+ * Calls `POST /auth/login` (password, which emails a 6-digit code to the admin's address) and
  * `POST /auth/login/verify` (the code).
  */
 @Component({

@@ -11,13 +11,16 @@ PASSWORD_MAX_LENGTH = 128
 
 
 class UserCreate(BaseModel):
-    """A staff account. Admins sign in with a password plus an SMS code; officers with an SMS code only."""
+    """A staff account. Admins sign in with a password plus an emailed code; officers with an emailed code only.
+
+    The mobile is optional contact info; codes always go to the email address.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=120)
-    mobile: str = Field(min_length=10, max_length=20)
+    mobile: str | None = Field(default=None, min_length=10, max_length=20)
     password: str | None = Field(default=None, min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
     role: Role
 
@@ -31,8 +34,8 @@ class UserCreate(BaseModel):
 
     @field_validator("mobile")
     @classmethod
-    def normalize_mobile(cls, value: str) -> str:
-        return normalize_indian_mobile(value)
+    def normalize_mobile(cls, value: str | None) -> str | None:
+        return normalize_indian_mobile(value) if value is not None else None
 
     @field_validator("password")
     @classmethod
@@ -46,7 +49,7 @@ class UserCreate(BaseModel):
         if self.role == Role.ADMIN and self.password is None:
             raise ValueError("admins need a password")
         if self.role == Role.SECURITY_OFFICER and self.password is not None:
-            raise ValueError("security officers sign in with an SMS code and do not have a password")
+            raise ValueError("security officers sign in with an emailed code and do not have a password")
         return self
 
 

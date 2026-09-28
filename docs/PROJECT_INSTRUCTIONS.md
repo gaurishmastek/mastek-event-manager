@@ -8,7 +8,7 @@ API detail. This file only orients a new contributor.
 ## What this is
 
 A backend for running festival events (Navratri, Diwali and similar) in Mumbai: an admin creates
-an event with a guest capacity, guests register on a public form and verify their mobile by OTP,
+an event with a guest capacity, guests register on a public form and verify their email with OTP,
 a QR pass is issued, and a security officer scans that pass at the gate to record entry.
 
 ## Stack
@@ -26,7 +26,7 @@ a QR pass is issued, and a security officer scans that pass at the gate to recor
 | Officer-to-event scoping | Implemented — `officer_events` table, managed through `/events/{id}/officers` |
 | Guest registration, OTP, QR pass | Implemented — `app/modules/guests`, `app/modules/otp` |
 | Gate scanning / check-in | Implemented — `app/modules/gate` |
-| Admin login, officer login, sessions | Implemented — `app/modules/auth`, `app/modules/users`: admin password + SMS code, officer SMS code, JWT access tokens, logout. No refresh tokens yet. |
+| Admin login, officer login, sessions | Implemented — `app/modules/auth`, `app/modules/users`: admin password + email code, officer email code, JWT access tokens, logout. No refresh tokens yet. |
 
 See [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md), [`docs/BUSINESS_RULES.md`](./BUSINESS_RULES.md),
 [`docs/DATABASE.md`](./DATABASE.md), [`docs/RBAC.md`](./RBAC.md), [`docs/API.md`](./API.md),
