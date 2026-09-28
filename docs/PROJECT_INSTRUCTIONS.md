@@ -16,17 +16,17 @@ a QR pass is issued, and a security officer scans that pass at the gate to recor
 - **Backend**: FastAPI + SQLAlchemy 2.x + Alembic + MySQL (`pymysql`), Python 3.11, `pydantic` v2
   for request/response validation, `cryptography` (Fernet) for PII at rest, `segno` for QR
   generation. See `backend/requirements.txt`.
-- **Frontend**: not yet in the repository.
+- **Frontend**: Angular in `frontend/` (public registration, admin console, gate scanner).
 
 ## What is implemented on `main`
 
 | Area | State |
 |---|---|
 | Event CRUD | Implemented — `app/modules/events` |
-| Officer-to-event scoping | Implemented at the data/query level (`officer_events` table) — no management API yet |
+| Officer-to-event scoping | Implemented — `officer_events` table, managed through `/events/{id}/officers` |
 | Guest registration, OTP, QR pass | Implemented — `app/modules/guests`, `app/modules/otp` |
 | Gate scanning / check-in | Implemented — `app/modules/gate` |
-| Admin login, officer login, sessions | **Not implemented.** `app/modules/auth/dependencies.py` is a stand-in: every protected route currently returns `401 Not authenticated` until the real auth module lands. Tests override `get_current_user` to exercise the role logic. |
+| Admin login, officer login, sessions | Implemented — `app/modules/auth`, `app/modules/users`: admin password + SMS code, officer SMS code, JWT access tokens, logout. No refresh tokens yet. |
 
 See [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md), [`docs/BUSINESS_RULES.md`](./BUSINESS_RULES.md),
 [`docs/DATABASE.md`](./DATABASE.md), [`docs/RBAC.md`](./RBAC.md), [`docs/API.md`](./API.md),

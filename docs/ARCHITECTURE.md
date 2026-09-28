@@ -13,10 +13,11 @@ backend/app/
   core/       settings, crypto, mobile-number helpers — shared by every module
   db/         SQLAlchemy base, audit/soft-delete mixin, session factory
   modules/
-    auth/     role dependencies only — the real login/session module is not built yet
+    auth/     staff sign-in (admin password + SMS code, officer SMS code), tokens, role dependencies
+    users/    staff accounts (admins and security officers)
     events/   event CRUD, officer-to-event scoping
     guests/   public registration, OTP verification, QR pass issuance
-    otp/      OTP generation, delivery and rate limiting (used by guests today; auth will reuse it)
+    otp/      OTP generation, delivery and rate limiting (used by guest registration and staff sign-in)
     gate/     pass scanning and check-in, officer event-scope enforcement
   main.py     FastAPI app, mounts each module's router under /api/v1
 ```
@@ -45,8 +46,7 @@ gate/service.py   --> events/repository.py, gate/access.py     (officer scope)
 ```
 
 `events`, `guests` and `gate` all depend on `auth/dependencies.py` only for `CurrentUser` and
-`require_roles(...)` — none of them depend on how a user is authenticated, so swapping in the
-real auth module should not require changes to these three.
+`require_roles(...)` — none of them depend on how a user is authenticated.
 
 ## Key design choices
 
@@ -68,6 +68,7 @@ real auth module should not require changes to these three.
   `events/repository.py` (list/get) and `gate/access.py::EventScopePolicy` restrict by
   `officer_events` membership at the SQL level; an officer asking for an event they are not
   assigned to gets a 404, not a 403, so they cannot tell it exists.
-- **Auth is stubbed on purpose.** `auth/dependencies.py::get_current_user` always raises 401.
-  This keeps every protected route safe by default while the real login module is built
-  separately; tests override the dependency to supply a `CurrentUser`.
+- **Deny by default.** `app/main.py` mounts every router except auth and the public guest routes
+  behind `get_current_user`, and `tests/test_app.py` fails if any route outside `PUBLIC_ROUTES`
+  answers without a token. Module tests can still override `get_current_user` (the `login_as`
+  fixture) to exercise role logic without a sign-in round trip.

@@ -13,20 +13,28 @@ Defined in `app/modules/auth/dependencies.py`:
 There is no `event_manager` role and guests have no account or role — the public guest endpoints
 require no authentication at all, only a verified OTP (see [`API.md`](./API.md)).
 
-## Authentication: not implemented yet
+## Authentication
 
-`get_current_user()` in `auth/dependencies.py` unconditionally raises `401 Not authenticated`.
-No login, token issuance or session exists on `main`. Every route that depends on
-`require_roles(...)` is therefore currently unreachable in a real deployment; the events and
-gate test suites cover the role logic by overriding `get_current_user` with a fake `CurrentUser`.
-This is intentional — it is a fail-closed placeholder until the real auth module (admin
-password + 2FA, officer OTP login) lands, per `docs/event-management.md` section 1.
+Staff sign in through `app/modules/auth` (see [`API.md`](./API.md#staff-auth--appmodulesauthrouterpy)):
+
+- **Admin**: email and password (Argon2id, lockout after repeated failures), then a 6-digit code
+  texted to their registered mobile.
+- **Security officer**: a 6-digit code texted to their registered mobile. Officers have no password.
+
+Both steps return a short-lived JWT access token. `get_current_user()` re-reads the user on every
+request, so deactivation, deletion or a role change applies immediately, and `POST /auth/logout`
+bumps the user's `session_version`, revoking every earlier token.
+
+Every router except auth and the public guest routes is mounted behind authentication in
+`app/main.py`. Only routes listed in `PUBLIC_ROUTES` answer without a token, and
+`tests/test_app.py` fails if any other route does.
 
 ## Officer scope
 
 A security officer only acts on events they are assigned to, via the `officer_events` table
-(`officer_id`, `event_id`, unique pair). There is currently no API to manage that table — rows
-must be inserted directly (e.g. by a future admin/users module or a migration/seed script).
+(`officer_id`, `event_id`, unique pair). Admins manage it with `GET/PUT/DELETE
+/events/{id}/officers[/{user_id}]`; only active `security_officer` users can be assigned, and
+unassigning is a soft delete.
 
 Enforcement points:
 
@@ -47,8 +55,12 @@ An officer requesting an event (read, or gate scan/entries) they are not assigne
 | `POST /events`, `PATCH /events/{id}`, `DELETE /events/{id}` | ✅ | ❌ (403) | — |
 | `POST /gate/events/{id}/scan` | any event | assigned events only (else 404) | — |
 | `GET /gate/events/{id}/entries` | any event | assigned events only (else 404) | — |
+| `GET/PUT/DELETE /events/{id}/officers...` | ✅ | ❌ (403) | — |
+| `GET/POST /users` (staff accounts) | ✅ | ❌ (403) | — |
+| `/auth/login`, `/auth/login/verify`, `/auth/officer/otp`, `/auth/officer/verify` | public | public | — |
+| `GET /auth/me`, `POST /auth/logout` | ✅ | ✅ | — |
 | Public registration/OTP/verify endpoints (`/public/...`) | n/a | n/a | ✅, no login |
 
-Not yet built: officer/admin account management endpoints, an audit-log read API, and admin
+Not yet built: editing or deactivating staff accounts via the API, an audit-log read API, and admin
 manual check-in (fallback for when scanning is unavailable) — see `event-management.md`'s
 "Open decisions" and "Build order" for what is still planned.

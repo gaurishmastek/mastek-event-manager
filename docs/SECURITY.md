@@ -6,13 +6,29 @@ in the repo before. The threat model this was built against is
 `security-review/SECURITY_DESIGN_REVIEW.md` in the project files; this document tracks what of
 it has landed in code, not the full review.
 
-## Authentication: not implemented — fails closed
+## Staff authentication (`app/modules/auth`)
 
-`app/modules/auth/dependencies.py::get_current_user` unconditionally raises `401`. No login,
-password storage, token issuance or session handling exists yet. This means every route guarded
-by `require_roles(...)` is currently unusable end-to-end (see [`RBAC.md`](./RBAC.md)) — the
-design deliberately keeps every protected route rejecting by default rather than open, until the
-real auth module (admin password + 2FA, officer OTP login) lands.
+Staff sign in through `app/modules/auth` (see [`API.md`](./API.md#staff-auth--appmodulesauthrouterpy)):
+
+- **Admin**: email and password (Argon2id, lockout after repeated failures), then a 6-digit code
+  texted to their registered mobile.
+- **Security officer**: a 6-digit code texted to their registered mobile. Officers have no password.
+
+Both steps return a short-lived JWT access token. `get_current_user()` re-reads the user on every
+request, so deactivation, deletion or a role change applies immediately, and `POST /auth/logout`
+bumps the user's `session_version`, revoking every earlier token.
+
+- Passwords: Argon2id via `argon2-cffi`, rehashed on login when parameters change; at least 12
+  characters, not all letters or all digits.
+- Password step: one generic `401` for unknown email, wrong password, locked, disabled or
+  non-admin accounts, and a dummy hash check so unknown emails take the same time. The account
+  locks for `LOCKOUT_MINUTES` after `MAX_FAILED_LOGIN_ATTEMPTS` wrong passwords.
+- The `challenge_id` from the password step is a signed token of a different type from an access
+  token, so it cannot be used as one, and it is only redeemable with that login's SMS code.
+- Staff mobiles are stored as an HMAC for lookup plus a Fernet-encrypted copy for sending codes.
+- `POST /auth/officer/otp` answers the same for unknown numbers and sends nothing to them.
+- Deny by default: only routes in `app/main.py::PUBLIC_ROUTES` answer without a token, enforced by
+  `tests/test_app.py`.
 
 ## Guest OTP (`app/modules/otp`)
 
@@ -81,9 +97,13 @@ real auth module (admin password + 2FA, officer OTP login) lands.
 
 - Any real SMS provider (`otp/sms.py::DisabledSmsSender` is the only non-dev option today — it
   always fails delivery).
-- Security response headers (CSP, HSTS, `Referrer-Policy`, `Permissions-Policy`), CORS
-  configuration, disabling `/docs`/`/openapi.json` in production — `app/main.py` currently
-  mounts the routers with no middleware at all.
+- A Content-Security-Policy and `Permissions-Policy`. `app/main.py` already sets
+  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and `Cache-Control: no-store`
+  (plus HSTS in production), restricts CORS to `CORS_ORIGINS`, and turns off `/docs` and
+  `/openapi.json` in production.
+- Refresh tokens: the frontend keeps the access token in memory, so a page reload signs out.
+- Per-IP rate limiting on the password step (the per-account lockout is in place); best done at
+  the reverse proxy.
 - CAPTCHA on public registration/OTP endpoints.
 - CI-run `pip-audit`/`bandit`/`gitleaks`, and alerting on OTP failure spikes, SMS spend or
   repeated invalid scans.

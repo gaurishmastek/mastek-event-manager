@@ -22,10 +22,13 @@ All runtime configuration is a single `pydantic-settings` class,
 |---|---|---|
 | `ENVIRONMENT` | `development` | `development` \| `test` \| `production` |
 | `DATABASE_URL` | `mysql+pymysql://mastek:mastek@localhost:3306/mastek_events` | |
-| `SECRET_KEY` | dev placeholder | HMAC key for OTP hashes, mobile/IP hashes. **Must** be a random ≥32-char value in production |
+| `SECRET_KEY` | dev placeholder | Signs staff access tokens; HMAC key for OTP hashes, mobile/IP hashes. **Must** be a random ≥32-char value in production |
 | `PII_ENCRYPTION_KEY` | dev placeholder | Fernet key for encrypting guest mobiles at rest. **Must** be set in production |
 | `SMS_PROVIDER` | `disabled` | `disabled` \| `console`. `console` prints OTPs to stdout and is refused when `ENVIRONMENT=production` |
 | `OTP_TTL_SECONDS`, `OTP_MAX_ATTEMPTS`, `OTP_RESEND_COOLDOWN_SECONDS`, `OTP_MAX_PER_MOBILE_PER_HOUR`, `OTP_MAX_PER_MOBILE_PER_DAY`, `OTP_MAX_PER_IP_PER_HOUR`, `SMS_DAILY_BUDGET` | see `config.py` | OTP/anti-abuse tuning — see [`SECURITY.md`](./SECURITY.md) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES`, `OFFICER_SESSION_MINUTES` | `30`, `480` | Admin and officer session lengths |
+| `MAX_FAILED_LOGIN_ATTEMPTS`, `LOCKOUT_MINUTES` | `5`, `15` | Admin password lockout |
+| `CORS_ORIGINS` | `http://localhost:4200` | Comma-separated frontend origins allowed to call the API |
 | `GATE_OPENS_MINUTES_BEFORE_START`, `GATE_CLOSES_HOURS_AFTER_START_IF_NO_END` | `180`, `12` | Gate scanning window — see [`BUSINESS_RULES.md`](./BUSINESS_RULES.md) |
 
 The app **refuses to start** with `ENVIRONMENT=production` if `SECRET_KEY` or
@@ -62,12 +65,12 @@ None of the following exist in the repository yet:
   directly for OTP rate limiting by IP — running behind a proxy needs
   `--proxy-headers --forwarded-allow-ips` on uvicorn, noted as a comment in
   `guests/router.py::_client_ip`, but nothing wires that up yet).
-- Any HTTPS/TLS termination, CORS or security-header configuration (see
-  [`SECURITY.md`](./SECURITY.md)).
+- Any HTTPS/TLS termination (see [`SECURITY.md`](./SECURITY.md)).
 - A real SMS provider integration — `SMS_PROVIDER` only supports `disabled` (delivery always
   fails) and `console` (dev-only, prints to stdout).
-- Deployment of the auth module — since it does not exist yet, there is no way to actually sign
-  in as an admin or officer once deployed (see [`RBAC.md`](./RBAC.md)).
+- A real SMS provider is needed before anyone can sign in outside development: admins and officers
+  receive their sign-in codes by SMS. Create the first admin with
+  `python -m app.cli create-admin --email ... --name ... --mobile ...`.
 
 `docs/event-management.md` describes the intended production posture; this file will be filled
 in as deployment tooling actually lands in the repo.

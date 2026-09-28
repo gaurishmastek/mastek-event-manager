@@ -7,6 +7,7 @@ MySQL via SQLAlchemy 2.x; every schema change goes through an Alembic migration
 
 Migrations so far:
 
+- `20260928_0000_create_users.py` — `users`
 - `20260928_0001_create_events.py` — `events`, `officer_events`
 - `20260928_0002_guest_passes_and_gate.py` — `registrations`, `otp_challenges`, `check_ins`,
   `scan_attempts`
@@ -15,10 +16,28 @@ Migrations so far:
 
 Tables marked "audited" below use `app/db/mixins.py::AuditMixin`:
 `created_at`, `updated_at`, `deleted_at` (nullable — soft delete), `created_by`, `updated_by`,
-`deleted_by` (all `Integer`, no FK yet since the `users` table doesn't exist). Repositories
+`deleted_by` (all `Integer`, holding a `users.id`, without a foreign key). Repositories
 filter out rows where `deleted_at IS NOT NULL`.
 
 ## Tables
+
+### `users` (audited)
+
+Staff accounts: admins and security officers. Guests never get a row here.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | int | PK |
+| `email` | varchar(254) | not null, unique, stored lowercase |
+| `full_name` | varchar(120) | not null |
+| `password_hash` | varchar(255) | not null. Argon2id. Officers get a hash of a random value, since they sign in by SMS code only |
+| `role` | enum `admin`, `security_officer` | not null |
+| `mobile_hash` | varchar(64) | unique. HMAC of the mobile, for looking officers up by number |
+| `mobile_encrypted` | varchar(255) | Fernet-encrypted mobile that sign-in codes are sent to |
+| `is_active` | bool | not null |
+| `session_version` | int | not null. Bumped on logout; access tokens carry it and stop working when it changes |
+| `failed_login_attempts`, `locked_until`, `last_login_at` | int, datetime, datetime | Password lockout and last sign-in |
+
 
 ### `events` (audited)
 
@@ -45,7 +64,7 @@ Assigns a security officer to an event.
 | Column | Type | Notes |
 |---|---|---|
 | `id` | int, PK | |
-| `officer_id` | int | not null, indexed. No FK yet — the `users` table doesn't exist. |
+| `officer_id` | int | not null, indexed, FK `users.id` |
 | `event_id` | int | FK → `events.id`, not null, indexed |
 
 Unique: `uq_officer_events_officer_event` on `(officer_id, event_id)`.
@@ -131,7 +150,7 @@ Index: `ix_scan_attempts_event_created_at` on `(event_id, created_at)`.
 
 ## Not yet in the database
 
-`users`, `sessions`, `qr_passes` (as a separate table with its own validity window), and
-`audit_log` do not exist on `main` — they belong to the auth module and the fuller audit trail
+`sessions` (refresh tokens), `qr_passes` (as a separate table with its own validity window), and
+`audit_log` do not exist on `main` — they belong to the fuller auth and audit design
 described in [`event-management.md`](./event-management.md#3-data-model), which have not landed
 yet.
