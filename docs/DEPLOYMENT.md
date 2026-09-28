@@ -64,8 +64,9 @@ through a migration; there is no `create_all()`/auto-sync path in the app itself
 - `frontend/package.json` uses Vercel's static builder and serves Angular's
   `frontend/dist/frontend/browser` output.
 
-The root `requirements.txt` delegates to `backend/requirements.txt` so Vercel installs the same pinned runtime
-dependencies used by local backend development.
+Vercel's requirements parser does not support nested `-r` includes, so the root `requirements.txt` mirrors the pinned
+runtime dependencies in `backend/requirements.txt`. `backend/tests/test_deployment.py` prevents the two manifests
+from drifting apart.
 
 Requests under `/api/*` are routed to FastAPI. Static assets are served from the Angular build, and every other path
 falls back to `frontend/index.html` so deep links such as `/admin` or `/register/<id>` load the app. The deployment
