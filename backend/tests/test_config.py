@@ -33,3 +33,14 @@ def test_normalizes_indian_mobiles(raw):
 
 def test_masks_mobile():
     assert mask_mobile("+919876543210") == "98•••••210"
+
+
+def test_invalid_pii_key_fails_with_generation_hint():
+    with pytest.raises(ValidationError, match="Fernet.generate_key"):
+        Settings(pii_encryption_key="change-me")
+
+
+def test_blank_keys_fall_back_to_dev_defaults():
+    settings = Settings(secret_key="", pii_encryption_key="")
+    assert settings.secret_key == Settings().secret_key
+    assert settings.pii_encryption_key == Settings().pii_encryption_key

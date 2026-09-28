@@ -4,7 +4,22 @@ This project was generated using [Angular CLI](https://github.com/angular/angula
 
 ## Development server
 
-To start a local development server, run:
+The app calls the backend through the dev proxy in `proxy.conf.json`, which forwards `/api` to
+`http://127.0.0.1:8000`. Start the backend first, in another terminal:
+
+```bash
+cd backend
+pip install -r requirements-dev.txt   # first time only
+cp .env.example .env                  # first time only; set DATABASE_URL, leave the two keys empty
+alembic upgrade head                   # first time, and after pulling new migrations
+python -m app.cli create-admin --email you@example.com --name "Your Name" --mobile 98XXXXXXXX   # first time only
+SMS_PROVIDER=console uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+With `SMS_PROVIDER=console`, sign-in codes are printed in that backend terminal instead of being texted.
+If the proxy logs `ECONNREFUSED`, the backend is not running on port 8000.
+
+Then start the frontend:
 
 ```bash
 ng serve

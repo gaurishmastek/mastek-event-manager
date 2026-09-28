@@ -6,10 +6,10 @@
 cd backend
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-cp .env.example .env          # set SECRET_KEY and DATABASE_URL (MySQL)
+cp .env.example .env          # set DATABASE_URL (MySQL); leave SECRET_KEY and PII_ENCRYPTION_KEY empty in dev
 alembic upgrade head
 python -m app.cli create-admin --email you@example.com --name "Your Name"
-uvicorn app.main:app --reload
+SMS_PROVIDER=console uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Run the tests (SQLite in memory, no MySQL needed): `pytest`. Lint: `ruff check . && ruff format --check .`

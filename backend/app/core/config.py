@@ -1,5 +1,6 @@
 from typing import Annotated, Literal
 
+from cryptography.fernet import Fernet
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
@@ -53,6 +54,27 @@ class Settings(BaseSettings):
     def _split_origins(cls, value: object) -> object:
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @field_validator("secret_key", "pii_encryption_key", mode="before")
+    @classmethod
+    def _blank_means_dev_default(cls, value: object, info) -> object:
+        # An empty value in .env falls back to the development default (refused in production).
+        if isinstance(value, str) and not value.strip():
+            return _DEV_SECRET_KEY if info.field_name == "secret_key" else _DEV_PII_ENCRYPTION_KEY
+        return value
+
+    @field_validator("pii_encryption_key")
+    @classmethod
+    def _valid_fernet_key(cls, value: str) -> str:
+        try:
+            Fernet(value.encode())
+        except ValueError:
+            raise ValueError(
+                "PII_ENCRYPTION_KEY must be a Fernet key (32 url-safe base64-encoded bytes). Generate one with: "
+                'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" '
+                "or leave it empty in development"
+            ) from None
         return value
 
     @model_validator(mode="after")
