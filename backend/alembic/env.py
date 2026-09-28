@@ -6,6 +6,9 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import settings
 from app.db.base import Base
 from app.modules.events import models as _event_models  # noqa: F401  (register tables)
+from app.modules.gate import models as _gate_models  # noqa: F401
+from app.modules.guests import models as _guest_models  # noqa: F401
+from app.modules.otp import models as _otp_models  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
