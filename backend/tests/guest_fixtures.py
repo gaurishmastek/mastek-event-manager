@@ -1,4 +1,5 @@
 import re
+import uuid
 from datetime import timedelta
 
 import pytest
@@ -52,7 +53,10 @@ def otp_limits(monkeypatch):
 @pytest.fixture()
 def make_event(db_session):
     def _make(
-        capacity: int = 100, starts_in: timedelta = timedelta(days=5), duration: timedelta | None = None
+        capacity: int = 100,
+        starts_in: timedelta = timedelta(days=5),
+        duration: timedelta | None = None,
+        max_guests: int = 5,
     ) -> Event:
         starts_at = utcnow() + starts_in
         event = Event(
@@ -61,6 +65,7 @@ def make_event(db_session):
             starts_at=starts_at,
             ends_at=starts_at + (duration if duration is not None else timedelta(hours=5)),
             capacity=capacity,
+            max_guests_per_registration=max_guests,
             created_by=1,
             updated_by=1,
         )
@@ -71,11 +76,41 @@ def make_event(db_session):
     return _make
 
 
+def public_id_of(db_session, event_id: int) -> str:
+    """The event's public link id. Unknown ids get a random UUID, which the API must treat as not found."""
+    event = db_session.get(Event, event_id)
+    return event.public_id if event is not None else str(uuid.uuid4())
+
+
+def registration_body(
+    email: str = "asha.patil@example.com", name: str = "Asha Patil", guests: list[str] | None = None, **extra
+) -> dict:
+    """A valid form submission. The employee id defaults to the email's local part, so distinct emails
+    are distinct employees."""
+    guests = guests or []
+    return {
+        "employee_id": email.strip().split("@")[0],
+        "employee_name": name,
+        "email": email,
+        "mobile": "98765 43210",
+        "number_of_guests": len(guests),
+        "guest_names": guests,
+        "consent": True,
+        **extra,
+    }
+
+
 @pytest.fixture()
-def register(client):
-    def _register(event_id: int, email: str = "asha.patil@example.com", name: str = "Asha Patil", **extra):
-        body = {"guest_name": name, "email": email, "consent": True, **extra}
-        return client.post(f"/api/v1/public/events/{event_id}/registrations", json=body)
+def register(client, db_session):
+    def _register(
+        event_id: int,
+        email: str = "asha.patil@example.com",
+        name: str = "Asha Patil",
+        guests: list[str] | None = None,
+        **extra,
+    ):
+        body = registration_body(email, name, guests, **extra)
+        return client.post(f"/api/v1/public/events/{public_id_of(db_session, event_id)}/registrations", json=body)
 
     return _register
 
@@ -85,8 +120,14 @@ def issue_pass(client, mailbox, register, otp_limits):
     """Register and verify a guest; returns the pass JSON."""
     otp_limits(otp_resend_cooldown_seconds=0)
 
-    def _issue(event_id: int, email: str = "asha.patil@example.com", name: str = "Asha Patil") -> dict:
-        started = register(event_id, email=email, name=name)
+    def _issue(
+        event_id: int,
+        email: str = "asha.patil@example.com",
+        name: str = "Asha Patil",
+        guests: list[str] | None = None,
+        **extra,
+    ) -> dict:
+        started = register(event_id, email=email, name=name, guests=guests, **extra)
         assert started.status_code == 202, started.text
         verified = client.post(
             f"/api/v1/public/registrations/{started.json()['registration_id']}/verify", json={"code": mailbox.last_code}

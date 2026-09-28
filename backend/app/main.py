@@ -6,6 +6,7 @@ from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.router import router as auth_router
 from app.modules.events.router import router as events_router
 from app.modules.gate.router import router as gate_router
+from app.modules.guests.admin_router import router as registrations_admin_router
 from app.modules.guests.router import router as guests_router
 from app.modules.users.router import router as users_router
 
@@ -20,9 +21,9 @@ PUBLIC_ROUTES = frozenset(
         ("POST", f"{API_PREFIX}/auth/login/verify"),
         ("POST", f"{API_PREFIX}/auth/officer/otp"),
         ("POST", f"{API_PREFIX}/auth/officer/verify"),
-        # Guest self-registration: guests have no accounts and prove their email with an OTP instead.
-        ("GET", f"{API_PREFIX}/public/events/{{event_id}}"),
-        ("POST", f"{API_PREFIX}/public/events/{{event_id}}/registrations"),
+        # Employee self-registration from an event's public link: no accounts, the email is proved with an OTP.
+        ("GET", f"{API_PREFIX}/public/events/{{event_public_id}}"),
+        ("POST", f"{API_PREFIX}/public/events/{{event_public_id}}/registrations"),
         ("POST", f"{API_PREFIX}/public/registrations/{{registration_id}}/otp"),
         ("POST", f"{API_PREFIX}/public/registrations/{{registration_id}}/verify"),
     }
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     authenticated = [Depends(get_current_user)]
     app.include_router(users_router, prefix=API_PREFIX, dependencies=authenticated)
     app.include_router(events_router, prefix=API_PREFIX, dependencies=authenticated)
+    app.include_router(registrations_admin_router, prefix=API_PREFIX, dependencies=authenticated)
     app.include_router(gate_router, prefix=API_PREFIX, dependencies=authenticated)
     return app
 

@@ -1,4 +1,4 @@
-"""Public guest endpoints. No login: guests prove who they are with an OTP sent to their email."""
+"""Public registration endpoints. No login: employees prove who they are with an OTP sent to their email."""
 
 from typing import Annotated
 
@@ -16,6 +16,7 @@ from app.modules.guests.schemas import (
 )
 from app.modules.guests.service import (
     AlreadyCheckedInError,
+    DuplicateRegistrationError,
     EventFullError,
     EventNotFoundError,
     GuestRegistrationService,
@@ -23,14 +24,16 @@ from app.modules.guests.service import (
     OtpSentResult,
     RegistrationClosedError,
     RegistrationNotFoundError,
+    TooManyGuestsError,
 )
 from app.modules.notifications.email import EmailSender, get_email_sender
 from app.modules.otp.service import OtpInvalidError, OtpService, OtpThrottledError, OtpUnavailableError
 
 router = APIRouter(prefix="/public", tags=["public: guest registration"])
 
-EventId = Annotated[int, Path(ge=1, le=2_147_483_647)]
-RegistrationId = Annotated[str, Path(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")]
+UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+EventPublicId = Annotated[str, Path(pattern=UUID_PATTERN)]
+RegistrationId = Annotated[str, Path(pattern=UUID_PATTERN)]
 
 
 def get_guest_service(
@@ -60,7 +63,15 @@ def _to_http(exc: Exception) -> HTTPException:
         case RegistrationClosedError():
             return HTTPException(status.HTTP_409_CONFLICT, "Registration for this event is closed")
         case EventFullError():
-            return HTTPException(status.HTTP_409_CONFLICT, "This event is full")
+            return HTTPException(status.HTTP_409_CONFLICT, "This event does not have enough seats left for your party")
+        case TooManyGuestsError(limit=limit):
+            return HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT, f"You can bring at most {limit} guests to this event"
+            )
+        case DuplicateRegistrationError():
+            return HTTPException(
+                status.HTTP_409_CONFLICT, "This employee ID or email address is already registered for this event"
+            )
         case AlreadyCheckedInError():
             return HTTPException(status.HTTP_409_CONFLICT, "This pass has already been used to enter the event")
         case NoEmailOnRegistrationError():
@@ -83,6 +94,8 @@ _SERVICE_ERRORS = (
     RegistrationNotFoundError,
     RegistrationClosedError,
     EventFullError,
+    TooManyGuestsError,
+    DuplicateRegistrationError,
     AlreadyCheckedInError,
     NoEmailOnRegistrationError,
     OtpThrottledError,
@@ -100,10 +113,10 @@ def _otp_sent(result: OtpSentResult) -> OtpSent:
     )
 
 
-@router.get("/events/{event_id}", response_model=PublicEventInfo)
-def get_event_for_registration(event_id: EventId, service: Service) -> PublicEventInfo:
+@router.get("/events/{event_public_id}", response_model=PublicEventInfo)
+def get_event_for_registration(event_public_id: EventPublicId, service: Service) -> PublicEventInfo:
     try:
-        event, registration_open, seats_left = service.event_info(event_id)
+        event, registration_open, seats_left = service.event_info(event_public_id)
     except _SERVICE_ERRORS as exc:
         raise _to_http(exc) from exc
     return PublicEventInfo(
@@ -113,14 +126,14 @@ def get_event_for_registration(event_id: EventId, service: Service) -> PublicEve
     )
 
 
-@router.post("/events/{event_id}/registrations", response_model=OtpSent, status_code=status.HTTP_202_ACCEPTED)
-def register_guest(
-    event_id: EventId, data: RegistrationCreate, request: Request, response: Response, service: Service
+@router.post("/events/{event_public_id}/registrations", response_model=OtpSent, status_code=status.HTTP_202_ACCEPTED)
+def register_employee(
+    event_public_id: EventPublicId, data: RegistrationCreate, request: Request, response: Response, service: Service
 ) -> OtpSent:
-    """Start a registration (or resume one for the same email) and send an OTP."""
+    """Start a registration for an employee and their guests (or resume a pending one) and email an OTP."""
     _no_store(response)
     try:
-        return _otp_sent(service.register(event_id, data, ip=_client_ip(request)))
+        return _otp_sent(service.register(event_public_id, data, ip=_client_ip(request)))
     except _SERVICE_ERRORS as exc:
         raise _to_http(exc) from exc
 
@@ -142,12 +155,16 @@ def verify_otp(registration_id: RegistrationId, data: OtpVerify, response: Respo
         issued = service.verify(registration_id, data.code)
     except _SERVICE_ERRORS as exc:
         raise _to_http(exc) from exc
+    registration = issued.registration
     return GuestPass(
-        registration_id=issued.registration.public_id,
-        status=issued.registration.status,
-        guest_name=issued.registration.guest_name,
+        registration_id=registration.public_id,
+        status=registration.status,
+        employee_id=registration.employee_id,
+        employee_name=registration.employee_name,
+        guest_names=registration.guest_names,
+        party_size=registration.party_size,
         event=PublicEventRead.model_validate(issued.event),
         qr_token=issued.token,
         qr_svg=issued.qr_svg,
-        issued_at=issued.registration.qr_issued_at,
+        issued_at=registration.qr_issued_at,
     )

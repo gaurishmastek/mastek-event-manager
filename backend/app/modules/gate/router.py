@@ -35,7 +35,15 @@ _MESSAGES = {
 def _guest(registration: Registration) -> ScannedGuest:
     # Registrations from before the switch to email only have a masked mobile.
     contact = registration.email_masked or registration.mobile_masked or ""
-    return ScannedGuest(name=registration.guest_name, contact=contact)
+    return ScannedGuest(
+        name=registration.employee_name,
+        contact=contact,
+        employee_id=registration.employee_id,
+        guest_names=registration.guest_names,
+        party_size=registration.party_size,
+        email_masked=registration.email_masked,
+        mobile_masked=registration.mobile_masked,
+    )
 
 
 def _not_found() -> HTTPException:

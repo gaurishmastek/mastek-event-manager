@@ -7,6 +7,7 @@ from app.core.crypto import token_hash
 from app.db.mixins import utcnow
 from app.modules.guests.models import Registration
 from app.modules.otp.models import OtpChallenge
+from tests.guest_fixtures import registration_body
 
 BASE = "/api/v1/public"
 
@@ -29,14 +30,16 @@ def wrong(code: str) -> str:
 def test_public_event_info_needs_no_login(client, make_event):
     event = make_event(capacity=50)
 
-    response = client.get(f"{BASE}/events/{event.id}")
+    response = client.get(f"{BASE}/events/{event.public_id}")
 
     assert response.status_code == 200
     body = response.json()
     assert body["title"] == "Navratri Garba Night"
+    assert body["public_id"] == event.public_id
     assert body["registration_open"] is True
     assert body["seats_left"] == 50
-    assert "created_by" not in body
+    assert body["max_guests_per_registration"] == 5
+    assert "created_by" not in body and "id" not in body
 
 
 def test_register_emails_otp_and_masks_address(client, mailbox, register, make_event):
@@ -64,14 +67,14 @@ def test_verify_issues_a_random_pass_stored_only_as_hash(client, mailbox, regist
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "VERIFIED"
-    assert body["event"]["id"] == event.id
+    assert body["event"]["public_id"] == event.public_id and "id" not in body["event"]
     assert len(body["qr_token"]) >= 43
     assert body["qr_svg"].startswith("data:image/svg+xml")
     row = db_session.scalars(select(Registration)).one()
     assert row.qr_token_hash == token_hash(body["qr_token"])
     assert body["qr_token"] not in (row.qr_token_hash, row.email_encrypted)
     assert "asha" not in row.email_encrypted and "asha" not in row.email_hash
-    assert row.mobile_hash is None and row.mobile_encrypted is None
+    assert "9876543210" not in (row.mobile_hash, row.mobile_encrypted) and row.mobile_masked == "98•••••210"
 
 
 def test_otp_is_stored_only_as_hmac(client, mailbox, register, make_event, db_session):
@@ -106,7 +109,7 @@ def test_same_email_reuses_registration_and_pending_name_is_updated(client, mail
     body = verify(client, second, mailbox.last_code).json()
 
     assert first == second
-    assert body["guest_name"] == "Asha Patil"
+    assert body["employee_name"] == "Asha Patil"
 
 
 # --- input validation ------------------------------------------------------
@@ -132,25 +135,17 @@ def test_rejects_malformed_emails(register, mailbox, make_event, email):
     assert mailbox.sent == []
 
 
-def test_requires_consent(client, mailbox, make_event):
-    body = {"guest_name": "Asha", "email": "asha.patil@example.com", "consent": False}
-
-    response = client.post(f"{BASE}/events/{make_event().id}/registrations", json=body)
+def test_requires_consent(register, mailbox, make_event):
+    response = register(make_event().id, consent=False)
 
     assert response.status_code == 422
-
-
-def test_mobile_is_no_longer_accepted(register, mailbox, make_event):
-    response = register(make_event().id, mobile="9876543210")
-
-    assert response.status_code == 422
-    assert mailbox.sent == []
 
 
 def test_rejects_unknown_fields_and_control_characters(register, mailbox, make_event):
     event = make_event()
 
     assert register(event.id, status="VERIFIED").status_code == 422
+    assert register(event.id, guest_name="Asha").status_code == 422
     assert register(event.id, name="Asha\x00").status_code == 422
     assert register(event.id, name="x" * 101).status_code == 422
 
@@ -196,7 +191,7 @@ def test_full_event_rejects_new_guests_before_sending_sms(register, mailbox, iss
     response = register(event.id, email="ravi@example.com")
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "This event is full"
+    assert response.json()["detail"] == "This event does not have enough seats left for your party"
     assert len(mailbox.sent) == sent_before
 
 
@@ -204,7 +199,7 @@ def test_unverified_registrations_do_not_take_seats(client, mailbox, register, m
     event = make_event(capacity=1)
     register(event.id, email="asha.patil@example.com")
 
-    assert client.get(f"{BASE}/events/{event.id}").json()["seats_left"] == 1
+    assert client.get(f"{BASE}/events/{event.public_id}").json()["seats_left"] == 1
     assert register(event.id, email="ravi@example.com").status_code == 202
 
 
@@ -218,7 +213,7 @@ def test_capacity_is_checked_at_verification(client, mailbox, register, make_eve
     response = verify(client, first, first_code)
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "This event is full"
+    assert response.json()["detail"] == "This event does not have enough seats left for your party"
 
 
 # --- OTP abuse limits --------------------------------------------------------
@@ -335,9 +330,7 @@ def test_failed_sms_does_not_use_up_quota(client, mailbox, register, make_event,
 
 
 def test_disabled_sms_provider_fails_closed(client, make_event):
-    body = {"guest_name": "Asha", "email": "asha.patil@example.com", "consent": True}
-
-    response = client.post(f"{BASE}/events/{make_event().id}/registrations", json=body)
+    response = client.post(f"{BASE}/events/{make_event().public_id}/registrations", json=registration_body())
 
     assert response.status_code == 503
 
@@ -347,7 +340,7 @@ def test_pre_email_registration_asks_guest_to_register_again(client, mailbox, ma
     legacy = Registration(
         public_id="00000000-0000-4000-8000-000000000001",
         event_id=event.id,
-        guest_name="Old Guest",
+        employee_name="Old Guest",
         mobile_hash="h" * 64,
         mobile_encrypted="encrypted",
         mobile_masked="98•••••210",
