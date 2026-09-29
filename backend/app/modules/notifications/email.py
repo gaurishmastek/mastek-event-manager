@@ -2,20 +2,51 @@
 
 `EMAIL_PROVIDER` picks the adapter: `smtp` sends through the configured SMTP server, `console` prints
 messages to stdout for local development (refused in production), and `disabled` refuses to send.
+
+SMTP failures are classified (`EmailDeliveryError.kind`) and logged with the stage, the numeric SMTP code and a
+redacted provider reply, so an operator can tell a DNS problem from a rejected login or a refused sender without the
+log ever holding a credential, the message body or a full address.
 """
 
+import logging
+import re
 import smtplib
+import socket
 import ssl
 import sys
 from email.message import EmailMessage
+from email.utils import parseaddr
 from typing import Protocol
 
 from app.core.config import Settings, get_settings
 from app.core.email import mask_email
 
+logger = logging.getLogger(__name__)
+
+# Failure kinds, from where the conversation with the server broke down.
+NOT_CONFIGURED = "not_configured"
+DNS = "dns"
+CONNECT = "connect"
+TIMEOUT = "timeout"
+TLS = "tls"
+AUTH = "auth"
+SENDER_REJECTED = "sender_rejected"
+RECIPIENT_REJECTED = "recipient_rejected"
+DATA_REJECTED = "data_rejected"
+UNKNOWN = "unknown"
+
+_ADDRESS = re.compile(r"[^\s<>@\"']+@[^\s<>@\"']+")
+_UNPRINTABLE = re.compile(r"[\x00-\x1f\x7f]+")
+
 
 class EmailDeliveryError(Exception):
-    pass
+    """Delivery failed. `kind` is one of the module's failure kinds; `smtp_code` is the server's numeric reply."""
+
+    def __init__(self, message: str, *, kind: str = UNKNOWN, stage: str | None = None, smtp_code: int | None = None):
+        super().__init__(message)
+        self.kind = kind
+        self.stage = stage
+        self.smtp_code = smtp_code
 
 
 class EmailSender(Protocol):
@@ -24,7 +55,8 @@ class EmailSender(Protocol):
 
 class DisabledEmailSender:
     def send(self, to: str, subject: str, body: str) -> None:
-        raise EmailDeliveryError("Email delivery is not configured")
+        logger.warning("Email not sent: EMAIL_PROVIDER is disabled (check backend/.env or the environment)")
+        raise EmailDeliveryError("Email delivery is not configured", kind=NOT_CONFIGURED)
 
 
 class ConsoleEmailSender:
@@ -34,8 +66,58 @@ class ConsoleEmailSender:
         print(f"[dev email] To: {mask_email(to)} | {subject}\n{body}", file=sys.stdout, flush=True)
 
 
+def redact_smtp_reply(reply: bytes | str | None, limit: int = 160) -> str:
+    """A provider reply that is safe to log: addresses replaced, one line, bounded length."""
+    if reply is None:
+        return ""
+    text = reply.decode("utf-8", "replace") if isinstance(reply, bytes) else str(reply)
+    text = _ADDRESS.sub("<address>", text)
+    text = _UNPRINTABLE.sub(" ", text).strip()
+    return text[:limit]
+
+
+def _smtp_reply(exc: BaseException) -> tuple[int | None, bytes | str | None]:
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        # {address: (code, reply)}; the addresses themselves are never used.
+        for code, reply in exc.recipients.values():
+            return code, reply
+        return None, None
+    if isinstance(exc, smtplib.SMTPResponseException):
+        return exc.smtp_code, exc.smtp_error
+    return None, None
+
+
+def classify_smtp_failure(exc: BaseException, stage: str) -> str:
+    """Map an exception raised while talking to the server at `stage` to a failure kind."""
+    # Order matters: timeouts, DNS failures and TLS errors are all OSErrors.
+    if isinstance(exc, TimeoutError):
+        return TIMEOUT
+    if isinstance(exc, socket.gaierror):
+        return DNS
+    if isinstance(exc, ssl.SSLError) or stage == "starttls":
+        return TLS
+    if isinstance(exc, smtplib.SMTPSenderRefused):
+        return SENDER_REJECTED
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        return RECIPIENT_REJECTED
+    if isinstance(exc, smtplib.SMTPDataError):
+        return DATA_REJECTED
+    if stage == "login":
+        # Rejected credentials, or no authentication mechanism both sides support.
+        return AUTH
+    if isinstance(exc, smtplib.SMTPConnectError) or (stage == "connect" and isinstance(exc, OSError)):
+        return CONNECT
+    if isinstance(exc, smtplib.SMTPServerDisconnected | ConnectionError):
+        return CONNECT
+    return UNKNOWN
+
+
 class SmtpEmailSender:
-    """Sends plain-text mail through an SMTP server, over STARTTLS or implicit TLS unless told otherwise."""
+    """Sends plain-text mail through an SMTP server, over STARTTLS or implicit TLS unless told otherwise.
+
+    The certificate is always verified (`ssl.create_default_context()`); a TLS failure is reported, never retried
+    in the clear.
+    """
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -48,6 +130,7 @@ class SmtpEmailSender:
         message["Subject"] = subject
         message.set_content(body)
         context = ssl.create_default_context()
+        stage = "connect"
         try:
             if s.smtp_security == "ssl":
                 server = smtplib.SMTP_SSL(s.smtp_host, s.smtp_port, timeout=s.smtp_timeout_seconds, context=context)
@@ -55,12 +138,57 @@ class SmtpEmailSender:
                 server = smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=s.smtp_timeout_seconds)
             with server:
                 if s.smtp_security == "starttls":
+                    stage = "starttls"
                     server.starttls(context=context)
                 if s.smtp_username:
+                    stage = "login"
                     server.login(s.smtp_username, s.smtp_password)
+                stage = "send"
                 server.send_message(message)
         except (smtplib.SMTPException, OSError) as exc:
-            raise EmailDeliveryError(f"SMTP delivery failed: {exc.__class__.__name__}") from exc
+            kind = classify_smtp_failure(exc, stage)
+            code, reply = _smtp_reply(exc)
+            logger.warning(
+                "SMTP delivery failed: kind=%s stage=%s code=%s error=%s host=%s port=%s security=%s "
+                "sender=%s recipient=%s reply=%r",
+                kind,
+                stage,
+                code,
+                exc.__class__.__name__,
+                s.smtp_host,
+                s.smtp_port,
+                s.smtp_security,
+                mask_email(parseaddr(s.email_from)[1]),
+                mask_email(to),
+                redact_smtp_reply(reply),
+            )
+            raise EmailDeliveryError(
+                f"SMTP delivery failed: {kind} at {stage} ({exc.__class__.__name__}, code {code})",
+                kind=kind,
+                stage=stage,
+                smtp_code=code,
+            ) from exc
+
+
+def email_config_summary(settings: Settings) -> dict[str, object]:
+    """The effective email configuration with nothing secret in it: no password, and addresses masked."""
+    from app.core.config import ENV_FILE
+
+    sender = parseaddr(settings.email_from)[1]
+    username = settings.smtp_username
+    return {
+        "environment": settings.environment,
+        "env_file": str(ENV_FILE) if ENV_FILE else "(none)",
+        "env_file_found": bool(ENV_FILE and ENV_FILE.is_file()),
+        "email_provider": settings.email_provider,
+        "smtp_host": settings.smtp_host or "(empty)",
+        "smtp_port": settings.smtp_port,
+        "smtp_security": settings.smtp_security,
+        "smtp_timeout_seconds": settings.smtp_timeout_seconds,
+        "email_from": mask_email(sender) if "@" in sender else "(empty or invalid)",
+        "smtp_username": (mask_email(username) if "@" in username else "(set)") if username else "(empty)",
+        "smtp_password_configured": bool(settings.smtp_password),
+    }
 
 
 def get_email_sender() -> EmailSender:
