@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { environment } from '../../environments/environment';
-import type { GuestPass, OtpSent, PublicEventInfo, RegistrationCreate } from './models';
+import type { AttendanceDeclined, GuestPass, OtpSent, PublicEventInfo, RegistrationCreate } from './models';
 
 /** `backend/app/modules/guests/router.py`, mounted under `/public`. No auth: employees register from the event's public link. */
 @Injectable({ providedIn: 'root' })
@@ -23,6 +23,6 @@ export class GuestsApiService {
   }
 
   verifyOtp(registrationId: string, code: string) {
-    return this.http.post<GuestPass>(`${this.base}/registrations/${registrationId}/verify`, { code });
+    return this.http.post<GuestPass | AttendanceDeclined>(`${this.base}/registrations/${registrationId}/verify`, { code });
   }
 }

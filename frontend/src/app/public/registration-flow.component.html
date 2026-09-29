@@ -116,55 +116,238 @@
               }
             </div>
 
-            <div>
-              <label for="guest-count" class="mb-1 block text-sm font-medium">Number of accompanying guests</label>
-              <input
-                id="guest-count"
-                name="guestCount"
-                type="number"
-                inputmode="numeric"
-                min="0"
-                [max]="maxGuests()"
-                step="1"
-                required
-                [ngModel]="guestCount()"
-                (ngModelChange)="setGuestCount($event)"
-                (blur)="markTouched('guestCount')"
-                [attr.aria-invalid]="!!guestCountError()"
-                aria-describedby="guest-count-help guest-count-error"
-                class="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-              <p id="guest-count-help" class="mt-1 text-xs text-muted-foreground">
-                Not counting yourself. Up to {{ maxGuests() }}.
-              </p>
-              @if (guestCountError(); as error) {
-                <p id="guest-count-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
+            <fieldset
+              id="attending-group"
+              [attr.aria-invalid]="show('attending') && !!yesNoError(answers().attending)"
+              aria-describedby="attending-help attending-error"
+            >
+              <legend class="mb-1 text-sm font-medium">
+                Will you be attending the event on
+                @if (eventStartsAt(); as startsAt) {
+                  <span class="whitespace-nowrap">{{ startsAt | date: 'EEEE, d MMMM y' : ist }}</span>?
+                }
+              </legend>
+              <div class="flex gap-6">
+                <label class="flex items-center gap-2 text-sm">
+                  <input
+                    id="attending-yes"
+                    type="radio"
+                    name="attending"
+                    required
+                    [checked]="answers().attending === true"
+                    (change)="setAttending(true)"
+                    (blur)="markTouched('attending')"
+                    class="h-4 w-4 border-input text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                  Yes
+                </label>
+                <label class="flex items-center gap-2 text-sm">
+                  <input
+                    id="attending-no"
+                    type="radio"
+                    name="attending"
+                    required
+                    [checked]="answers().attending === false"
+                    (change)="setAttending(false)"
+                    (blur)="markTouched('attending')"
+                    class="h-4 w-4 border-input text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                  No
+                </label>
+              </div>
+              @if (answers().attending === false) {
+                <p id="attending-help" class="mt-1 text-xs text-muted-foreground">
+                  Nothing else is needed. We'll email you a code to confirm your answer.
+                </p>
               }
-            </div>
+              @if (show('attending') && yesNoError(answers().attending); as error) {
+                <p id="attending-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
+              }
+            </fieldset>
 
-            @if (!guestCountError() && guestNames().length > 0) {
-              <fieldset class="space-y-3">
-                <legend class="mb-1 text-sm font-medium">Guest names</legend>
-                @for (name of guestNames(); track $index; let i = $index) {
-                  <div>
-                    <label [for]="'guest-name-' + i" class="mb-1 block text-xs text-muted-foreground">Guest {{ i + 1 }}</label>
+            @if (answers().attending === true) {
+              <fieldset
+                id="family-group"
+                  [attr.aria-invalid]="show('familyAttending') && !!yesNoError(answers().familyAttending)"
+                aria-describedby="family-error"
+              >
+                <legend class="mb-1 text-sm font-medium">Will you be accompanied by your family members?</legend>
+                <div class="flex gap-6">
+                  <label class="flex items-center gap-2 text-sm">
                     <input
-                      [id]="'guest-name-' + i"
-                      [name]="'guestName' + i"
-                      autocomplete="off"
-                      maxlength="100"
+                      id="family-yes"
+                      type="radio"
+                      name="familyAttending"
                       required
-                      [ngModel]="name"
-                      (ngModelChange)="setGuestName(i, $event)"
-                      (blur)="markTouched('guestName' + i)"
-                      [attr.aria-invalid]="show('guestName' + i) && !!personNameError(name, 'guest name')"
-                      [attr.aria-describedby]="'guest-name-' + i + '-error'"
-                      class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      [checked]="answers().familyAttending === true"
+                      (change)="setFamilyAttending(true)"
+                      (blur)="markTouched('familyAttending')"
+                      class="h-4 w-4 border-input text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     />
-                    @if (show('guestName' + i) && personNameError(name, 'guest name'); as error) {
-                      <p [id]="'guest-name-' + i + '-error'" class="mt-1 text-xs text-destructive">{{ error }}</p>
-                    }
+                    Yes
+                  </label>
+                  <label class="flex items-center gap-2 text-sm">
+                    <input
+                      id="family-no"
+                      type="radio"
+                      name="familyAttending"
+                      required
+                      [checked]="answers().familyAttending === false"
+                      (change)="setFamilyAttending(false)"
+                      (blur)="markTouched('familyAttending')"
+                      class="h-4 w-4 border-input text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                    No
+                  </label>
+                </div>
+                @if (show('familyAttending') && yesNoError(answers().familyAttending); as error) {
+                  <p id="family-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
+                }
+              </fieldset>
+
+              @if (answers().familyAttending === true) {
+                <fieldset id="family-members-group" aria-describedby="family-members-error party-error" class="space-y-3">
+                  <legend class="mb-1 text-sm font-medium">
+                    How many family members will accompany you? (Maximum: 1 adult and {{ maxKids }} kids)
+                  </legend>
+                  <div class="flex gap-6">
+                    <label class="flex items-center gap-2 text-sm">
+                      <input
+                        id="with-adult"
+                        type="checkbox"
+                        name="withAdult"
+                        [checked]="answers().withAdult"
+                        (change)="setWithAdult($any($event.target).checked)"
+                        class="h-4 w-4 rounded border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                      Adult
+                    </label>
+                    <label class="flex items-center gap-2 text-sm">
+                      <input
+                        id="with-kids"
+                        type="checkbox"
+                        name="withKids"
+                        [checked]="answers().withKids"
+                        (change)="setWithKids($any($event.target).checked)"
+                        class="h-4 w-4 rounded border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                      Kids
+                    </label>
                   </div>
+                  @if (submitAttempted() && familyMembersError(); as error) {
+                    <p id="family-members-error" class="text-xs text-destructive">{{ error }}</p>
+                  }
+
+                  @if (answers().withAdult) {
+                    <div>
+                      <label for="adult-name" class="mb-1 block text-sm font-medium">Adult Name</label>
+                      <input
+                        id="adult-name"
+                        name="adultName"
+                        autocomplete="off"
+                        maxlength="100"
+                        required
+                        [ngModel]="answers().adultName"
+                        (ngModelChange)="setAdultName($event)"
+                        (blur)="markTouched('adultName')"
+                        [attr.aria-invalid]="show('adultName') && !!personNameError(answers().adultName, 'name for the adult')"
+                        aria-describedby="adult-name-error"
+                        class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                      @if (show('adultName') && personNameError(answers().adultName, 'name for the adult'); as error) {
+                        <p id="adult-name-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
+                      }
+                    </div>
+                  }
+
+                  @if (answers().withKids) {
+                    <fieldset class="space-y-3" aria-describedby="kids-help kids-error">
+                      <legend class="mb-1 text-sm font-medium">Kids' names</legend>
+                      <p id="kids-help" class="text-xs text-muted-foreground">
+                        {{ answers().kidNames.length }} of {{ maxKids }} kids added.
+                      </p>
+                      @for (name of answers().kidNames; track $index; let i = $index) {
+                        <div>
+                          <label [for]="'kid-name-' + i" class="mb-1 block text-xs text-muted-foreground">Kid {{ i + 1 }}</label>
+                          <div class="flex gap-2">
+                            <input
+                              [id]="'kid-name-' + i"
+                              [name]="'kidName' + i"
+                              autocomplete="off"
+                              maxlength="100"
+                              required
+                              [ngModel]="name"
+                              (ngModelChange)="setKidName(i, $event)"
+                              (blur)="markTouched('kidName' + i)"
+                              [attr.aria-invalid]="show('kidName' + i) && !!personNameError(name, 'name for this kid')"
+                              [attr.aria-describedby]="'kid-name-' + i + '-error'"
+                              class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            />
+                            @if (answers().kidNames.length > 1) {
+                              <button
+                                type="button"
+                                [id]="'remove-kid-' + i"
+                                class="shrink-0 rounded-md border border-input px-3 text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                [attr.aria-label]="'Remove kid ' + (i + 1)"
+                                (click)="removeKid(i)"
+                              >
+                                Remove
+                              </button>
+                            }
+                          </div>
+                          @if (show('kidName' + i) && personNameError(name, 'name for this kid'); as error) {
+                            <p [id]="'kid-name-' + i + '-error'" class="mt-1 text-xs text-destructive">{{ error }}</p>
+                          }
+                        </div>
+                      }
+                      @if (answers().kidNames.length < maxKids) {
+                        <button
+                          id="add-kid"
+                          type="button"
+                          class="text-sm font-medium text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          (click)="addKid()"
+                        >
+                          + Add another kid
+                        </button>
+                      }
+                      @if (submitAttempted() && kidsError(); as error) {
+                        <p id="kids-error" class="text-xs text-destructive">{{ error }}</p>
+                      }
+                    </fieldset>
+                  }
+                </fieldset>
+              }
+
+              @if (partyError(); as error) {
+                <p id="party-error" class="text-xs text-destructive">{{ error }}</p>
+              }
+
+              <fieldset
+                id="food-group"
+                [attr.aria-invalid]="show('foodPreference') && !!foodPreferenceError()"
+                aria-describedby="food-error"
+              >
+                <legend class="mb-1 text-sm font-medium">Please mention your food preference.</legend>
+                <div class="flex flex-wrap gap-x-6 gap-y-2">
+                  @for (option of foodPreferences; track option.value) {
+                    <label class="flex items-center gap-2 text-sm">
+                      <input
+                        [id]="'food-' + option.value"
+                        type="radio"
+                        name="foodPreference"
+                        [required]="foodPreferenceRequired()"
+                        [value]="option.value"
+                        [checked]="answers().foodPreference === option.value"
+                        (change)="setFoodPreference(option.value)"
+                        (blur)="markTouched('foodPreference')"
+                        class="h-4 w-4 border-input text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                      {{ option.label }}
+                    </label>
+                  }
+                </div>
+                @if (show('foodPreference') && foodPreferenceError(); as error) {
+                  <p id="food-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
                 }
               </fieldset>
             }
@@ -238,6 +421,22 @@
       </app-card>
     }
 
+    @case ('declined') {
+      @if (declined(); as d) {
+        <app-card>
+          <div class="space-y-2 p-6 text-center" role="status">
+            <h1 class="text-lg font-semibold">Thank you, {{ d.employee_name }}</h1>
+            <p class="text-sm text-muted-foreground">
+              We've recorded that you won't be attending {{ d.event.title }}. No entry pass is issued.
+            </p>
+            <p class="text-xs text-muted-foreground">
+              Changed your mind? Register again from the same link with the same employee ID and email.
+            </p>
+          </div>
+        </app-card>
+      }
+    }
+
     @case ('pass') {
       @if (pass(); as p) {
         <app-card>
@@ -253,10 +452,22 @@
               </p>
               <ul class="mt-1 list-disc pl-5 text-muted-foreground">
                 <li>{{ p.employee_name }}@if (p.employee_id) {<span> ({{ p.employee_id }})</span>}</li>
-                @for (name of p.guest_names; track $index) {
-                  <li>{{ name }}</li>
+                @if (p.adult_name || p.kid_names.length) {
+                  @if (p.adult_name) {
+                    <li>{{ p.adult_name }} (adult)</li>
+                  }
+                  @for (name of p.kid_names; track $index) {
+                    <li>{{ name }} (kid)</li>
+                  }
+                } @else {
+                  @for (name of p.guest_names; track $index) {
+                    <li>{{ name }}</li>
+                  }
                 }
               </ul>
+              @if (p.food_preference) {
+                <p class="mt-2 text-muted-foreground">Food preference: {{ foodLabel(p.food_preference) }}</p>
+              }
             </div>
             <p class="text-xs text-muted-foreground">
               Arrive together and show this QR code at the gate. It can be scanned only once, for your whole party.

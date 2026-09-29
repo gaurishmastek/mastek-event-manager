@@ -82,7 +82,16 @@
                   <div class="text-xs">{{ row.mobile_masked ?? '—' }}</div>
                 </td>
                 <td class="px-4 py-3 text-muted-foreground">
-                  @if (row.guest_names.length) {
+                  @if (row.adult_name || row.kid_names.length) {
+                    <ol class="list-decimal pl-4">
+                      @if (row.adult_name) {
+                        <li>{{ row.adult_name }} (adult)</li>
+                      }
+                      @for (name of row.kid_names; track $index) {
+                        <li>{{ name }} (kid)</li>
+                      }
+                    </ol>
+                  } @else if (row.guest_names.length) {
                     <ol class="list-decimal pl-4">
                       @for (name of row.guest_names; track $index) {
                         <li>{{ name }}</li>
@@ -92,7 +101,12 @@
                     None
                   }
                 </td>
-                <td class="px-4 py-3">{{ row.party_size }}</td>
+                <td class="px-4 py-3">
+                  {{ row.attending ? row.party_size : '—' }}
+                  @if (row.attending) {
+                    <div class="text-xs text-muted-foreground">Food: {{ foodLabel(row.food_preference) }}</div>
+                  }
+                </td>
                 <td class="px-4 py-3">
                   <app-badge [tone]="statusTone(row.status)">{{ statusLabel(row.status) }}</app-badge>
                   @if (row.verified_at) {

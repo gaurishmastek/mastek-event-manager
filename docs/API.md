@@ -46,10 +46,11 @@ max_guests_per_registration, created_at, updated_at, created_by, updated_by, gat
 
 | Method & path | Access | Notes |
 |---|---|---|
-| `GET /events/{event_id}/registrations` | admin only (officers `403`, no token `401`) | Query: `limit` (1–100, default 20), `offset`, `search` (employee id or name, wildcards literal), `status` (`PENDING_OTP` \| `VERIFIED` \| `CHECKED_IN`). `404` for a missing or deleted event. `Cache-Control: no-store` |
+| `GET /events/{event_id}/registrations` | admin only (officers `403`, no token `401`) | Query: `limit` (1–100, default 20), `offset`, `search` (employee id or name, wildcards literal), `status` (`PENDING_OTP` \| `VERIFIED` \| `CHECKED_IN` \| `DECLINED`). `404` for a missing or deleted event. `Cache-Control: no-store` |
 
 Each item: `registration_id` (public UUID), `employee_id`, `employee_name`, `email_masked`, `mobile_masked`,
-`guest_names`, `number_of_guests`, `party_size`, `status`, `verified_at`, `qr_issued`, `qr_issued_at`,
+`attending`, `family_attending`, `guest_names` (adult first, then kids), `adult_name`, `kid_names`, `food_preference`,
+`number_of_guests`, `party_size`, `status`, `verified_at`, `qr_issued`, `qr_issued_at`,
 `checked_in_at`, `created_at`. Newest first. Never included: the QR token or its hash, OTP data, and full or
 encrypted email/mobile.
 
@@ -62,9 +63,9 @@ UUID from the registration link, never the numeric id (a non-UUID path segment i
 | Method & path | Notes |
 |---|---|
 | `GET /public/events/{event_public_id}` | Returns `PublicEventInfo`: `public_id`, title, description, location, times, `max_guests_per_registration`, `registration_open` and `seats_left` (people). No internal id. `404` if the event doesn't exist or is deleted (no distinction) |
-| `POST /public/events/{event_public_id}/registrations` | Body: `RegistrationCreate` (`employee_id`, `employee_name`, `email`, `mobile`, `number_of_guests`, `guest_names`, `consent: true`). Creates (or updates, if still `PENDING_OTP`) a registration and emails an OTP. `202 Accepted` with `OtpSent` (includes masked email). `409` if the party doesn't fit, registration is closed, or the employee id/email is taken by another registration; `422` for invalid input or more guests than the event allows |
+| `POST /public/events/{event_public_id}/registrations` | Body: `RegistrationCreate` (`employee_id`, `employee_name`, `email`, `mobile`, `attending`, and when attending `family_attending`, `accompanying_adult`, `adult_name`, `accompanying_kids`, `kid_names`, `food_preference`; `consent: true`). Inapplicable fields must be omitted, null, false or empty; see [`BUSINESS_RULES.md`](./BUSINESS_RULES.md#registration-and-otp) for the combinations that are `422`. Creates (or updates, if still `PENDING_OTP`) a registration and emails an OTP. `202 Accepted` with `OtpSent` (includes masked email). `409` if the party doesn't fit, registration is closed, or the employee id/email is taken by another registration; `422` for invalid input or more guests than the event allows |
 | `POST /public/registrations/{registration_id}/otp` | Resends an OTP for an existing registration (its `public_id` UUID in the path). `202` with `OtpSent`. `429` with `Retry-After` if throttled |
-| `POST /public/registrations/{registration_id}/verify` | Body: `OtpVerify` (`code`, 6 digits). Reserves seats for the whole party and returns `GuestPass` (`employee_id`, `employee_name`, `guest_names`, `party_size`, `event`, `qr_token`, `qr_svg` data URI, `issued_at`), issuing or replacing the QR pass. `400` if the code is wrong, expired or already used; `409` if the party no longer fits or the registration is already checked in; `422` if the admin has since lowered the guest limit below the party |
+| `POST /public/registrations/{registration_id}/verify` | Body: `OtpVerify` (`code`, 6 digits). For an employee who is not attending, records the decline and returns `AttendanceDeclined` (`status: "DECLINED"`, `attending: false`, `employee_id`, `employee_name`, `event`, `verified_at`; no seat, no QR). Otherwise reserves seats for the whole party and returns `GuestPass` (`attending: true`, `employee_id`, `employee_name`, `guest_names`, `adult_name`, `kid_names`, `food_preference`, `party_size`, `event`, `qr_token`, `qr_svg` data URI, `issued_at`), issuing or replacing the QR pass. `400` if the code is wrong, expired or already used; `409` if the party no longer fits or the registration is already checked in; `422` if the admin has since lowered the guest limit below the party |
 
 `registration_id` in the path is validated as a UUID (`^[0-9a-f]{8}-...$`) before it reaches the
 service layer.

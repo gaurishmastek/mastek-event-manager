@@ -28,9 +28,30 @@ describe('RegistrationFlowComponent', () => {
     return fixture.nativeElement.querySelector(selector) as T;
   }
 
-  function guestInputs(): HTMLInputElement[] {
-    return Array.from(fixture.nativeElement.querySelectorAll('input[id^="guest-name-"]'));
+  function kidInputs(): HTMLInputElement[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('input[id^="kid-name-"]'));
   }
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  async function click(selector: string): Promise<void> {
+    el<HTMLInputElement>(selector).click();
+    await settle();
+  }
+
+  async function fillDetails(): Promise<void> {
+    await type('#employee-id', 'MT-104');
+    await type('#employee-name', 'Asha Patil');
+    await type('#email', 'asha@example.com');
+    await type('#mobile', '98765 43210');
+  }
+
+  const submit = () => el<HTMLButtonElement>('button[type="submit"]');
+  const registrationsUrl = () => `${environment.apiBaseUrl}/public/events/${PUBLIC_ID}/registrations`;
 
   async function type(selector: string, value: string): Promise<void> {
     const input = el<HTMLInputElement>(selector);
@@ -61,67 +82,176 @@ describe('RegistrationFlowComponent', () => {
 
   afterEach(() => http.verify());
 
-  it('loads the event by its public id and shows no guest fields for zero guests', () => {
+  it('loads the event by its public id and asks about attendance on the event date', () => {
     expect(el('h1').textContent).toContain('Diwali Night');
-    expect(guestInputs().length).toBe(0);
+    // 12:00 UTC is 17:30 in Mumbai, still 20 October.
+    expect(el('#attending-group legend').textContent).toContain('Will you be attending the event on');
+    expect(el('#attending-group legend').textContent).toContain('Sunday, 20 October 2030');
+    expect(el('#family-group')).toBeNull();
+    expect(el('#food-group')).toBeNull();
   });
 
-  it('renders one labelled, required field per guest and keeps names when the count changes', async () => {
-    await type('#guest-count', '2');
-    expect(guestInputs().map((input) => input.id)).toEqual(['guest-name-0', 'guest-name-1']);
-    expect(el('label[for="guest-name-1"]').textContent).toContain('Guest 2');
-    expect(guestInputs().every((input) => input.required)).toBeTrue();
-
-    await type('#guest-name-0', 'Ravi Patil');
-    await type('#guest-name-1', 'Meera Patil');
-    await type('#guest-count', '3');
-    expect(guestInputs().map((input) => input.value)).toEqual(['Ravi Patil', 'Meera Patil', '']);
-
-    await type('#guest-count', '1');
-    expect(guestInputs().map((input) => input.value)).toEqual(['Ravi Patil']);
-
-    await type('#guest-count', '0');
-    expect(guestInputs().length).toBe(0);
+  it('places the attendance question right after the mobile field', () => {
+    const fields = Array.from(fixture.nativeElement.querySelectorAll('#mobile, #attending-group, #consent')).map(
+      (node) => (node as HTMLElement).id,
+    );
+    expect(fields).toEqual(['mobile', 'attending-group', 'consent']);
   });
 
-  it('shows an error instead of fields above the event limit', async () => {
-    await type('#guest-count', '4');
+  it('shows the family and food questions only when attending, and clears them when switching to No', async () => {
+    await click('#attending-yes');
+    expect(el('#family-group legend').textContent).toContain('Will you be accompanied by your family members?');
+    expect(el('#food-group legend').textContent).toContain('Please mention your food preference.');
 
-    expect(guestInputs().length).toBe(0);
-    expect(el('#guest-count-error').textContent).toContain('at most 3');
+    await click('#family-yes');
+    await click('#with-adult');
+    await type('#adult-name', 'Ravi Patil');
+    await click('#food-JAIN');
+
+    await click('#attending-no');
+    expect(el('#family-group')).toBeNull();
+    expect(el('#food-group')).toBeNull();
+
+    await click('#attending-yes');
+    expect(el<HTMLInputElement>('#family-yes').checked).toBeFalse();
+    expect(el<HTMLInputElement>('#food-JAIN').checked).toBeFalse();
+    expect(fixture.componentInstance.answers().adultName).toBe('');
   });
 
-  it('keeps Send code disabled until the form is valid, then posts the trimmed payload', async () => {
-    const submit = () => el<HTMLButtonElement>('button[type="submit"]');
-    expect(submit().disabled).toBeTrue();
+  it('clears family details when family attendance changes from Yes to No', async () => {
+    await click('#attending-yes');
+    await click('#family-yes');
+    await click('#with-adult');
+    await type('#adult-name', 'Ravi Patil');
+    await click('#with-kids');
+    await type('#kid-name-0', 'Meera Patil');
 
-    await type('#employee-id', 'MT-104');
-    await type('#employee-name', 'Asha Patil');
-    await type('#email', 'asha@example.com');
-    await type('#mobile', '98765 43210');
-    await type('#guest-count', '2');
-    await type('#guest-name-0', 'Ravi Patil');
-    await type('#guest-name-1', 'Meera Patil');
-    await type('#guest-count', '1');
-    expect(submit().disabled).toBeTrue(); // consent still missing
+    await click('#family-no');
+    expect(el('#family-members-group')).toBeNull();
+    await click('#family-yes');
 
-    const consent = el<HTMLInputElement>('#consent');
-    consent.click();
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
+    expect(el<HTMLInputElement>('#with-adult').checked).toBeFalse();
+    expect(el<HTMLInputElement>('#with-kids').checked).toBeFalse();
+    expect(el('#adult-name')).toBeNull();
+    expect(kidInputs().length).toBe(0);
+  });
+
+  it('shows a required Adult Name only while Adult is ticked, and clears it when unticked', async () => {
+    await click('#attending-yes');
+    await click('#family-yes');
+    await click('#with-adult');
+    expect(el<HTMLInputElement>('#adult-name').required).toBeTrue();
+    expect(el('label[for="adult-name"]').textContent).toContain('Adult Name');
+    await type('#adult-name', 'Ravi Patil');
+
+    await click('#with-adult');
+    expect(el('#adult-name')).toBeNull();
+    await click('#with-adult');
+    expect(el<HTMLInputElement>('#adult-name').value).toBe('');
+  });
+
+  it('lets the guest add up to four kids and remove them, with labelled required fields', async () => {
+    await click('#attending-yes');
+    await click('#family-yes');
+    await click('#with-kids');
+    expect(kidInputs().map((input) => input.id)).toEqual(['kid-name-0']);
+    expect(el('#remove-kid-0')).toBeNull(); // at least one kid is required
+
+    await type('#kid-name-0', 'Meera');
+    await click('#add-kid');
+    await type('#kid-name-1', 'Kiran');
+    await click('#add-kid');
+    await click('#add-kid');
+    expect(kidInputs().length).toBe(4);
+    expect(el('label[for="kid-name-3"]').textContent).toContain('Kid 4');
+    expect(kidInputs().every((input) => input.required)).toBeTrue();
+    expect(el('#add-kid')).toBeNull(); // no fifth kid
+
+    await click('#remove-kid-0');
+    expect(kidInputs().map((input) => input.value)).toEqual(['Kiran', '', '']);
+    expect(el('#add-kid')).not.toBeNull();
+    expect(el('#remove-kid-1').getAttribute('aria-label')).toBe('Remove kid 2');
+
+    await click('#with-kids');
+    expect(kidInputs().length).toBe(0);
+  });
+
+  it('lets a guest who is not attending submit without answering anything else', async () => {
+    await fillDetails();
+    await click('#attending-no');
+    await click('#consent');
     expect(submit().disabled).toBeFalse();
 
     submit().click();
     fixture.detectChanges();
-    const request = http.expectOne(`${environment.apiBaseUrl}/public/events/${PUBLIC_ID}/registrations`);
+    const request = http.expectOne(registrationsUrl());
     expect(request.request.body).toEqual({
       employee_id: 'MT-104',
       employee_name: 'Asha Patil',
       email: 'asha@example.com',
       mobile: '98765 43210',
-      number_of_guests: 1,
-      guest_names: ['Ravi Patil'],
+      attending: false,
+      consent: true,
+    });
+    request.flush({
+      registration_id: '11111111-1111-4111-8111-111111111111',
+      email: 'as•••@example.com',
+      otp_expires_at: '2030-10-01T10:05:00',
+      resend_available_at: '2030-10-01T10:01:00',
+    });
+    await settle();
+
+    await type('app-input input', '123456');
+    submit().click();
+    http
+      .expectOne(`${environment.apiBaseUrl}/public/registrations/11111111-1111-4111-8111-111111111111/verify`)
+      .flush({
+        registration_id: '11111111-1111-4111-8111-111111111111',
+        status: 'DECLINED',
+        attending: false,
+        employee_id: 'MT-104',
+        employee_name: 'Asha Patil',
+        event: EVENT,
+        verified_at: '2030-10-01T10:02:00',
+      });
+    await settle();
+
+    expect(el('[role="status"]').textContent).toContain("won't be attending Diwali Night");
+    expect(fixture.nativeElement.querySelector('img')).toBeNull(); // no QR pass
+  });
+
+  it('keeps Send code disabled until the conditional answers are complete, then posts only what applies', async () => {
+    expect(submit().disabled).toBeTrue();
+    await fillDetails();
+    await click('#consent');
+    expect(submit().disabled).toBeTrue(); // attendance not answered
+
+    await click('#attending-yes');
+    await click('#family-yes');
+    expect(submit().disabled).toBeTrue(); // neither Adult nor Kids
+    await click('#with-adult');
+    await click('#with-kids');
+    await type('#adult-name', ' Ravi Patil ');
+    await type('#kid-name-0', 'Meera Patil');
+    expect(submit().disabled).toBeTrue(); // food preference missing
+    await click('#food-FAST_FOOD');
+    expect(submit().disabled).toBeFalse();
+
+    submit().click();
+    fixture.detectChanges();
+    const request = http.expectOne(registrationsUrl());
+    expect(request.request.body).toEqual({
+      employee_id: 'MT-104',
+      employee_name: 'Asha Patil',
+      email: 'asha@example.com',
+      mobile: '98765 43210',
+      attending: true,
+      family_attending: true,
+      accompanying_adult: true,
+      adult_name: 'Ravi Patil',
+      accompanying_kids: true,
+      kid_names: ['Meera Patil'],
+      food_preference: 'FAST_FOOD',
       consent: true,
     });
     expect(submit().disabled).toBeTrue(); // in progress
@@ -132,5 +262,17 @@ describe('RegistrationFlowComponent', () => {
     );
     fixture.detectChanges();
     expect(el('[role="alert"]').textContent).toContain('already registered');
+    expect(submit().disabled).toBeFalse(); // can retry
+  });
+
+  it('shows an error when the family is larger than the event allows', async () => {
+    await click('#attending-yes');
+    await click('#family-yes');
+    await click('#with-adult');
+    await click('#with-kids');
+    await click('#add-kid');
+    await click('#add-kid');
+
+    expect(el('#party-error').textContent).toContain('at most 3 guests');
   });
 });

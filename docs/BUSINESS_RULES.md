@@ -27,23 +27,47 @@ file calls out where current code differs from that spec.
 
 ## Registration and OTP (`app/modules/guests`, `app/modules/otp`)
 
-- Employees register themselves and their accompanying guests from the event's registration link. One registration
-  is one **party**: the employee plus `number_of_guests` accompanying guests, admitted together by one QR pass.
+- Employees register themselves and their accompanying family from the event's registration link. One registration
+  is one **party**: the employee plus `number_of_guests` accompanying guests (the adult and kids below), admitted
+  together by one QR pass.
 - Public form fields (backend-validated; unknown fields rejected):
   - `employee_id`: 1–30 characters, letters, digits, `-`, `_`, `.`, starting with a letter or digit. Compared
     case-insensitively (stored as entered plus an upper-cased copy for uniqueness).
-  - `employee_name` and each of `guest_names`: 2–100 characters, single line, no control characters.
+  - `employee_name`, `adult_name` and each of `kid_names`: 2–100 characters, single line, no control characters.
   - `email`: validated, trimmed, lowercased. OTPs go only here.
   - `mobile`: a valid Indian mobile number, normalized to `+91XXXXXXXXXX` (`app/core/mobile.py`). Stored, never
     messaged.
-  - `number_of_guests`: whole number, 0 to the event's `max_guests_per_registration`; `guest_names` must list
-    exactly that many names.
+  - `attending` ("Will you be attending the event on {event date}?"): required `true`/`false` (strict booleans).
+    When `false`, every field below except `consent` must be left out (or null/false/empty); sending any of them is
+    `422`. A non-attending employee still verifies their email by OTP; the registration then becomes `DECLINED`
+    (see below).
+  - `family_attending` ("Will you be accompanied by your family members?"): required when attending. When `false`
+    the employee attends alone and no family member field may be sent.
+  - `accompanying_adult` / `accompanying_kids`: the "Adult" and "Kids" checkboxes. When family is attending, at least
+    one must be `true`. At most **one** adult: there is a single `adult_name` field and no list of adults.
+  - `adult_name`: required when `accompanying_adult` is `true`, forbidden otherwise.
+  - `kid_names`: 1–4 names when `accompanying_kids` is `true`, empty otherwise. More than 4 kids is `422`.
+  - `food_preference`: `VEG` | `JAIN` | `FAST_FOOD` (shown as Veg, Jain, Fast Food), exactly one, required for every
+    attendee; any other value is `422`. Whether an employee attending **alone** must also give one is controlled by
+    `FOOD_PREFERENCE_REQUIRED_WHEN_ALONE` in `guests/schemas.py` (currently `True`, mirrored in the frontend's
+    `registration-form.ts`); a party with family always must.
+  - The party size is derived: `number_of_guests` = (1 if an adult) + number of kids, and must not exceed the event's
+    `max_guests_per_registration` (`422`). The old free-form `number_of_guests` / `guest_names` request fields are
+    no longer accepted.
   - `consent`: must be `true`.
+- The frontend hides and clears every answer that stops applying (`clearInapplicable` in
+  `frontend/src/app/public/registration-form.ts`): answering No to attendance clears the family and food answers,
+  No to family clears the adult and kids, and unticking Adult or Kids clears those names. The backend rejects any such
+  stale value rather than ignoring it, so hidden fields can never be stored.
 - One registration per `(event, employee id)` and per `(event, email)`, enforced by unique constraints
   (`uq_registrations_event_employee`, `uq_registrations_event_email`). Submitting an employee id and an email that
   belong to two different registrations is refused with `409`.
-- Resubmitting while still `PENDING_OTP` (matched by employee id or email) replaces the details, contacts and guest
-  list and sends a new OTP, subject to the usual OTP limits. Guest rows beyond the new count are soft-deleted.
+- Resubmitting while still `PENDING_OTP` (matched by employee id or email) replaces the details, contacts, answers and
+  family list and sends a new OTP, subject to the usual OTP limits. Guest rows beyond the new count are soft-deleted.
+- A `DECLINED` registration (verified, not attending) holds no seat and has no QR pass. The employee can change their
+  mind by submitting again with the **same** employee id and email: the new answers replace the old ones and the
+  registration goes back to `PENDING_OTP` for a fresh OTP. A not-attending submission skips the seat and guest-limit
+  checks, so an employee can decline even when the event is full.
 - A `VERIFIED` registration is never changed from the public form. Submitting it again with the **same** employee id
   and email only sends a new code (to reissue a lost pass); with only one of the two matching it is refused with
   `409`, without sending a code or revealing the masked address. A `CHECKED_IN` registration gets `409`.
