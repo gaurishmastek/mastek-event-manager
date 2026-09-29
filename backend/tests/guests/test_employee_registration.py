@@ -81,7 +81,7 @@ def test_rejects_non_indian_or_malformed_mobiles(register, mailbox, make_event, 
     assert mailbox.sent == []
 
 
-@pytest.mark.parametrize("field", ["employee_id", "employee_name", "email", "mobile", "number_of_guests", "consent"])
+@pytest.mark.parametrize("field", ["employee_id", "employee_name", "email", "mobile", "attending", "consent"])
 def test_required_fields(client, mailbox, make_event, field):
     body = registration_body()
     del body[field]
@@ -92,22 +92,12 @@ def test_required_fields(client, mailbox, make_event, field):
 
 
 @pytest.mark.parametrize(
-    ("count", "names"),
-    [
-        (2, ["Ravi Patil"]),  # fewer names than guests
-        (1, ["Ravi Patil", "Meera Patil"]),  # more names than guests
-        (0, ["Ravi Patil"]),
-        (-1, []),
-        (1.5, ["Ravi Patil"]),
-        ("1", ["Ravi Patil"]),
-        (True, ["Ravi Patil"]),
-        (11, ["Guest Name"] * 11),
-    ],
+    "extra",
+    [{"number_of_guests": 1}, {"guest_names": ["Ravi Patil"]}],
 )
-def test_guest_count_must_match_names_and_be_a_small_whole_number(register, mailbox, make_event, count, names):
-    response = register(make_event().id, guests=names, number_of_guests=count)
-
-    assert response.status_code == 422
+def test_guest_count_fields_are_replaced_by_the_family_questions(register, mailbox, make_event, extra):
+    # The party is described only by the family answers now; the old free-form guest fields are unknown.
+    assert register(make_event().id, **extra).status_code == 422
     assert mailbox.sent == []
 
 

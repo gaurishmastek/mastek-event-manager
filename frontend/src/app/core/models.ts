@@ -102,16 +102,27 @@ export interface PublicEventInfo extends PublicEventRead {
   seats_left: number;
 }
 
+export type FoodPreference = 'VEG' | 'JAIN' | 'FAST_FOOD';
+
+/**
+ * The public form. Send only the answers that apply: nothing after `attending` when not attending, and no family
+ * members when attending alone. The backend rejects inapplicable details rather than ignoring them.
+ */
 export interface RegistrationCreate {
   employee_id: string;
   employee_name: string;
   email: string;
   /** Indian mobile number; the backend stores it as +91XXXXXXXXXX. OTPs still go by email only. */
   mobile: string;
-  /** Accompanying guests, not counting the employee. */
-  number_of_guests: number;
-  /** Exactly `number_of_guests` names. */
-  guest_names: string[];
+  attending: boolean;
+  family_attending?: boolean;
+  accompanying_adult?: boolean;
+  /** Required when `accompanying_adult` is true. */
+  adult_name?: string | null;
+  accompanying_kids?: boolean;
+  /** 1 to 4 names when `accompanying_kids` is true. */
+  kid_names?: string[];
+  food_preference?: FoodPreference | null;
   consent: true;
 }
 
@@ -130,15 +141,31 @@ export interface OtpVerify {
 export interface GuestPass {
   registration_id: string;
   status: string;
+  attending: true;
   employee_id: string | null;
   employee_name: string;
+  /** Every accompanying guest: the adult first, then the kids. */
   guest_names: string[];
+  adult_name: string | null;
+  kid_names: string[];
+  food_preference: FoodPreference | null;
   /** The employee plus their guests; the one pass admits all of them once. */
   party_size: number;
   event: PublicEventRead;
   qr_token: string;
   qr_svg: string;
   issued_at: string;
+}
+
+/** Verification result for an employee who said they will not attend: recorded, with no seat and no pass. */
+export interface AttendanceDeclined {
+  registration_id: string;
+  status: 'DECLINED';
+  attending: false;
+  employee_id: string | null;
+  employee_name: string;
+  event: PublicEventRead;
+  verified_at: string;
 }
 
 // ---- Gate scanning (backend/app/modules/gate) ------------------------------
@@ -187,7 +214,7 @@ export interface EntryPage {
 
 // ---- Admin registrations list (backend/app/modules/guests/admin_router.py) --
 
-export type RegistrationStatus = 'PENDING_OTP' | 'VERIFIED' | 'CHECKED_IN';
+export type RegistrationStatus = 'PENDING_OTP' | 'VERIFIED' | 'CHECKED_IN' | 'DECLINED';
 
 export interface RegistrationAdminRead {
   registration_id: string;
@@ -195,7 +222,12 @@ export interface RegistrationAdminRead {
   employee_name: string;
   email_masked: string | null;
   mobile_masked: string | null;
+  attending: boolean;
+  family_attending: boolean | null;
   guest_names: string[];
+  adult_name: string | null;
+  kid_names: string[];
+  food_preference: FoodPreference | null;
   number_of_guests: number;
   party_size: number;
   status: RegistrationStatus;

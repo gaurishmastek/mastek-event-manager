@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { EventsApiService } from '../../core/events-api.service';
 import { apiErrorMessage } from '../../core/http-error';
-import type { EventRead, RegistrationAdminRead, RegistrationStatus } from '../../core/models';
+import type { EventRead, FoodPreference, RegistrationAdminRead, RegistrationStatus } from '../../core/models';
 import { BadgeComponent, type BadgeTone } from '../../ui/badge/badge.component';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { CardComponent } from '../../ui/card/card.component';
@@ -16,12 +16,16 @@ const STATUS_LABEL: Record<RegistrationStatus, string> = {
   PENDING_OTP: 'Pending OTP',
   VERIFIED: 'Verified',
   CHECKED_IN: 'Checked in',
+  DECLINED: 'Not attending',
 };
+
+const FOOD_LABEL: Record<FoodPreference, string> = { VEG: 'Veg', JAIN: 'Jain', FAST_FOOD: 'Fast Food' };
 
 const STATUS_TONE: Record<RegistrationStatus, BadgeTone> = {
   PENDING_OTP: 'neutral',
   VERIFIED: 'success',
   CHECKED_IN: 'warning',
+  DECLINED: 'destructive',
 };
 
 /**
@@ -101,6 +105,10 @@ export class EventRegistrationsComponent {
   nextPage(): void {
     this.offset.set(this.offset() + PAGE_SIZE);
     this.load();
+  }
+
+  foodLabel(food: FoodPreference | null): string {
+    return food ? FOOD_LABEL[food] : '—';
   }
 
   statusLabel(status: RegistrationStatus): string {

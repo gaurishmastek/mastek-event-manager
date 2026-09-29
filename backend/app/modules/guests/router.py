@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.guests.schemas import (
+    AttendanceDeclined,
     GuestPass,
     OtpSent,
     OtpVerify,
@@ -16,6 +17,7 @@ from app.modules.guests.schemas import (
 )
 from app.modules.guests.service import (
     AlreadyCheckedInError,
+    DeclineRecorded,
     DuplicateRegistrationError,
     EventFullError,
     EventNotFoundError,
@@ -147,21 +149,36 @@ def resend_otp(registration_id: RegistrationId, request: Request, response: Resp
         raise _to_http(exc) from exc
 
 
-@router.post("/registrations/{registration_id}/verify", response_model=GuestPass)
-def verify_otp(registration_id: RegistrationId, data: OtpVerify, response: Response, service: Service) -> GuestPass:
-    """Check the OTP and return the guest's QR pass. Verifying again re-issues it and voids the old QR code."""
+@router.post("/registrations/{registration_id}/verify", response_model=GuestPass | AttendanceDeclined)
+def verify_otp(
+    registration_id: RegistrationId, data: OtpVerify, response: Response, service: Service
+) -> GuestPass | AttendanceDeclined:
+    """Check the OTP and return the guest's QR pass. Verifying again re-issues it and voids the old QR code.
+
+    An employee who answered that they will not attend gets `AttendanceDeclined` instead: no seat, no pass."""
     _no_store(response)
     try:
         issued = service.verify(registration_id, data.code)
     except _SERVICE_ERRORS as exc:
         raise _to_http(exc) from exc
     registration = issued.registration
+    if isinstance(issued, DeclineRecorded):
+        return AttendanceDeclined(
+            registration_id=registration.public_id,
+            employee_id=registration.employee_id,
+            employee_name=registration.employee_name,
+            event=PublicEventRead.model_validate(issued.event),
+            verified_at=registration.verified_at,
+        )
     return GuestPass(
         registration_id=registration.public_id,
         status=registration.status,
         employee_id=registration.employee_id,
         employee_name=registration.employee_name,
         guest_names=registration.guest_names,
+        adult_name=registration.adult_name,
+        kid_names=registration.kid_names,
+        food_preference=registration.food_preference,
         party_size=registration.party_size,
         event=PublicEventRead.model_validate(issued.event),
         qr_token=issued.token,

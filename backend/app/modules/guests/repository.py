@@ -1,13 +1,20 @@
 # Postponed annotations: the `list` method would otherwise shadow the builtin in later signatures.
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.db.mixins import utcnow
-from app.modules.guests.models import SEAT_HOLDING_STATUSES, Registration, RegistrationGuest, RegistrationStatus
+from app.modules.guests.models import (
+    SEAT_HOLDING_STATUSES,
+    GuestType,
+    Registration,
+    RegistrationGuest,
+    RegistrationStatus,
+)
 
 
 def _escape_like(term: str) -> str:
@@ -96,8 +103,9 @@ class RegistrationRepository:
         self.db.flush()
         return registration
 
-    def set_guests(self, registration: Registration, names: list[str]) -> None:
-        """Make the registration's active guests exactly `names`, in order, without hard-deleting rows.
+    def set_guests(self, registration: Registration, guests: Sequence[tuple[str, GuestType]]) -> None:
+        """Make the registration's active guests exactly `guests` (name and type), in order, without
+        hard-deleting rows.
 
         A name at a position that still exists is updated in place, extra positions are soft-deleted,
         and a soft-deleted row is revived if its position is needed again.
@@ -109,20 +117,25 @@ class RegistrationRepository:
                 select(RegistrationGuest).where(RegistrationGuest.registration_id == registration.id)
             )
         }
-        for position, name in enumerate(names):
+        for position, (name, guest_type) in enumerate(guests):
             row = existing.get(position)
             if row is None:
-                self.db.add(RegistrationGuest(registration_id=registration.id, name=name, position=position))
+                self.db.add(
+                    RegistrationGuest(
+                        registration_id=registration.id, name=name, position=position, guest_type=guest_type.value
+                    )
+                )
             else:
                 row.name = name
+                row.guest_type = guest_type.value
                 row.deleted_at = None
                 row.deleted_by = None
                 row.updated_at = now
         for position, row in existing.items():
-            if position >= len(names) and row.deleted_at is None:
+            if position >= len(guests) and row.deleted_at is None:
                 row.deleted_at = now
                 row.updated_at = now
-        registration.number_of_guests = len(names)
+        registration.number_of_guests = len(guests)
         self.db.flush()
         self.db.expire(registration, ["guests"])
 

@@ -93,13 +93,16 @@ have no employee id and no guests; those from before the SMS→email switch have
 | `employee_id_normalized` | varchar(30) | nullable (older rows only) — upper-cased, for uniqueness |
 | `employee_name` | varchar(100) | not null (was `guest_name` before `0004`) |
 | `number_of_guests` | int | not null, default 0 — accompanying guests; the party takes `1 + number_of_guests` seats |
+| `attending` | bool | not null, default true (`0005`) — "Will you be attending?"; rows from before `0005` count as attending |
+| `family_attending` | bool | nullable (`0005`) — "Will your family accompany you?"; null when not attending or for older rows |
+| `food_preference` | varchar(20) | nullable (`0005`) — `VEG` \| `JAIN` \| `FAST_FOOD` (check `ck_registrations_food_preference`); null when not attending |
 | `email_hash` | varchar(64) | not null — HMAC-SHA256, for lookup/uniqueness |
 | `email_encrypted` | varchar(512) | not null — Fernet ciphertext |
 | `email_masked` | varchar(260) | not null — display only, e.g. `as•••@example.com` |
 | `mobile_hash` | varchar(64) | nullable — HMAC of the `+91` mobile. Set on every new registration |
 | `mobile_encrypted` | varchar(255) | nullable — Fernet ciphertext of the mobile. Never used to send messages |
 | `mobile_masked` | varchar(20) | nullable — display copy, e.g. `98•••••210` |
-| `status` | varchar(20) | `PENDING_OTP` \| `VERIFIED` \| `CHECKED_IN`, default `PENDING_OTP` |
+| `status` | varchar(20) | `PENDING_OTP` \| `VERIFIED` \| `CHECKED_IN` \| `DECLINED` (verified, not attending: no seat, no pass), default `PENDING_OTP` |
 | `consent_at` | datetime | not null |
 | `verified_at` | datetime | nullable |
 | `qr_token_hash` | varchar(64) | nullable, unique — SHA-256 of the QR pass token; no separate `qr_passes` table |
@@ -120,7 +123,8 @@ registration's guest list shrinks, the extra rows are soft-deleted, and revived 
 | `id` | int, PK | |
 | `registration_id` | int | FK → `registrations.id`, not null |
 | `name` | varchar(100) | not null |
-| `position` | int | not null — 0-based order |
+| `position` | int | not null — 0-based order (the adult first, then the kids) |
+| `guest_type` | varchar(10) | nullable (`0005`) — `ADULT` \| `KID` (check `ck_registration_guests_guest_type`); null for guests registered before `0005` |
 
 Unique: `uq_registration_guests_position` on `(registration_id, position)`.
 

@@ -67,10 +67,22 @@ class IssuedPass:
 
 
 @dataclass(frozen=True)
+class DeclineRecorded:
+    """Verification of an employee who said they will not attend: no seat is taken and no pass is issued."""
+
+    registration: Registration
+    event: Event
+
+
+@dataclass(frozen=True)
 class _Identity:
     employee_id: str
     employee_id_normalized: str
     email_hash: str
+
+
+# Registrations the public form may still change: nothing is reserved or issued for them.
+_EDITABLE_STATUSES = (RegistrationStatus.PENDING_OTP.value, RegistrationStatus.DECLINED.value)
 
 
 def registration_closes_at(event: Event) -> datetime:
@@ -82,7 +94,8 @@ class GuestRegistrationService:
     registration link, verifies their email by OTP, and receives one QR pass for the whole party.
 
     A registration only takes seats once the email is verified, so unverified or fake sign-ups can
-    never fill an event, and a party is admitted in full or not at all.
+    never fill an event, and a party is admitted in full or not at all. An employee who answers that
+    they will not attend verifies the same way, and is recorded as DECLINED without a seat or a pass.
     """
 
     def __init__(self, db: Session, otp: OtpService) -> None:
@@ -97,7 +110,8 @@ class GuestRegistrationService:
 
     def register(self, event_public_id: str, data: RegistrationCreate, *, ip: str | None) -> OtpSentResult:
         event = self._open_event(event_public_id)
-        if data.number_of_guests > event.max_guests_per_registration:
+        guests = data.accompanying_guests
+        if len(guests) > event.max_guests_per_registration:
             raise TooManyGuestsError(event.max_guests_per_registration)
 
         identity = _Identity(
@@ -108,7 +122,8 @@ class GuestRegistrationService:
         registration = self._find_existing(event, identity)
 
         if registration is None:
-            self._ensure_seats_available(event, 1 + data.number_of_guests)
+            if data.attending:
+                self._ensure_seats_available(event, 1 + len(guests))
             registration = Registration(
                 public_id=str(uuid.uuid4()),
                 event_id=event.id,
@@ -123,15 +138,16 @@ class GuestRegistrationService:
                 registration = self._find_existing(event, identity)
                 if registration is None:
                     raise
-                if registration.status == RegistrationStatus.PENDING_OTP.value:
+                if registration.status in _EDITABLE_STATUSES:
                     self._apply_form(registration, data, identity)
-                    self.registrations.set_guests(registration, data.guest_names)
+                    self.registrations.set_guests(registration, guests)
             else:
-                self.registrations.set_guests(registration, data.guest_names)
-        elif registration.status == RegistrationStatus.PENDING_OTP.value:
-            # Nothing is verified yet, so the latest form submission wins, guests included.
+                self.registrations.set_guests(registration, guests)
+        elif registration.status in _EDITABLE_STATUSES:
+            # Nothing is reserved or issued yet, so the latest form submission wins, guests included. An
+            # employee who declined can change their mind; they verify their email again either way.
             self._apply_form(registration, data, identity)
-            self.registrations.set_guests(registration, data.guest_names)
+            self.registrations.set_guests(registration, guests)
         # A verified registration is never changed from the public form. Submitting the same employee
         # id and email again only sends a code, so a lost pass can be reissued after verification.
 
@@ -142,9 +158,11 @@ class GuestRegistrationService:
         event = self._open_event_by_id(registration.event_id)
         return self._send_otp(event, registration, ip=ip)
 
-    def verify(self, public_id: str, code: str) -> IssuedPass:
+    def verify(self, public_id: str, code: str) -> IssuedPass | DeclineRecorded:
         """Verify the OTP, reserve seats for the whole party, and issue a new pass. Verifying again
-        later re-issues the pass and invalidates the old QR code (e.g. for an employee who lost it)."""
+        later re-issues the pass and invalidates the old QR code (e.g. for an employee who lost it).
+
+        For an employee who said they will not attend, record the decline instead: no seat, no pass."""
         registration = self._get_registration(public_id)
         self._open_event_by_id(registration.event_id)
         if registration.status == RegistrationStatus.CHECKED_IN.value:
@@ -163,6 +181,12 @@ class GuestRegistrationService:
         if registration.status == RegistrationStatus.CHECKED_IN.value:
             self.db.rollback()
             raise AlreadyCheckedInError
+        if registration.status == RegistrationStatus.PENDING_OTP.value and not registration.attending:
+            registration.status = RegistrationStatus.DECLINED.value
+            registration.verified_at = now
+        if registration.status == RegistrationStatus.DECLINED.value:
+            self.db.commit()
+            return DeclineRecorded(registration=registration, event=event)
         if registration.status == RegistrationStatus.PENDING_OTP.value:
             if registration.number_of_guests > event.max_guests_per_registration:
                 # The admin lowered the limit after this form was submitted.
@@ -214,14 +238,19 @@ class GuestRegistrationService:
         registration.mobile_hash = keyed_hash(data.mobile, purpose="mobile")
         registration.mobile_encrypted = encrypt_pii(data.mobile)
         registration.mobile_masked = mask_mobile(data.mobile)
-        registration.number_of_guests = data.number_of_guests
+        registration.attending = data.attending
+        registration.family_attending = data.family_attending
+        registration.food_preference = data.food_preference.value if data.food_preference is not None else None
         registration.consent_at = utcnow()
+        # A declined registration being answered again goes back through email verification.
+        registration.status = RegistrationStatus.PENDING_OTP.value
+        registration.verified_at = None
 
     def _send_otp(self, event: Event, registration: Registration, *, ip: str | None) -> OtpSentResult:
         if registration.status == RegistrationStatus.CHECKED_IN.value:
             self.db.rollback()
             raise AlreadyCheckedInError
-        if registration.status == RegistrationStatus.PENDING_OTP.value:
+        if registration.status == RegistrationStatus.PENDING_OTP.value and registration.attending:
             # Don't spend an email on a party that could not get in anyway.
             self._ensure_seats_available(event, registration.party_size)
         if registration.email_encrypted is None:

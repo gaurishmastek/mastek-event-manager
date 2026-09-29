@@ -85,18 +85,33 @@ def public_id_of(db_session, event_id: int) -> str:
 def registration_body(
     email: str = "asha.patil@example.com", name: str = "Asha Patil", guests: list[str] | None = None, **extra
 ) -> dict:
-    """A valid form submission. The employee id defaults to the email's local part, so distinct emails
-    are distinct employees."""
-    guests = guests or []
+    """A valid form submission from an attending employee. The employee id defaults to the email's local part,
+    so distinct emails are distinct employees. `guests` is the accompanying family: the first is the adult and
+    the rest are kids."""
     return {
         "employee_id": email.strip().split("@")[0],
         "employee_name": name,
         "email": email,
         "mobile": "98765 43210",
-        "number_of_guests": len(guests),
-        "guest_names": guests,
+        **family_fields(guests),
+        "food_preference": "VEG",
         "consent": True,
         **extra,
+    }
+
+
+def family_fields(guests: list[str] | None = None) -> dict:
+    """The attendance and family answers for an attending employee bringing `guests` (adult first, then kids)."""
+    if not guests:
+        return {"attending": True, "family_attending": False}
+    adult, *kids = guests
+    return {
+        "attending": True,
+        "family_attending": True,
+        "accompanying_adult": True,
+        "adult_name": adult,
+        "accompanying_kids": bool(kids),
+        "kid_names": kids,
     }
 
 

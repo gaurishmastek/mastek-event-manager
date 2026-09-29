@@ -68,3 +68,48 @@ def test_registration_link_migration_keeps_existing_events_and_passes(tmp_path):
     with engine.connect() as connection:
         assert connection.execute(text("SELECT guest_name FROM registrations")).scalar_one() == "Asha Patil"
     engine.dispose()
+
+
+def test_attendance_migration_keeps_existing_registrations_as_attending(tmp_path):
+    url = f"sqlite:///{tmp_path / 'attendance.db'}"
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(config, "20260928_0004")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO events (id, public_id, title, location, starts_at, capacity, created_at, updated_at) "
+                "VALUES (1, '00000000-0000-4000-8000-00000000000e', 'Diwali', 'Mumbai', '2030-10-20 12:00:00', 50, "
+                "'2026-09-28', '2026-09-28')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO registrations (id, public_id, event_id, employee_name, number_of_guests, status, "
+                "consent_at, created_at, updated_at) VALUES (1, '00000000-0000-4000-8000-000000000001', 1, "
+                "'Asha Patil', 1, 'VERIFIED', '2026-09-28', '2026-09-28', '2026-09-28')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO registration_guests (registration_id, name, position, created_at, updated_at) "
+                "VALUES (1, 'Ravi Patil', 0, '2026-09-28', '2026-09-28')"
+            )
+        )
+
+    command.upgrade(config, "head")
+
+    with engine.connect() as connection:
+        registration = connection.execute(
+            text("SELECT attending, family_attending, food_preference, number_of_guests FROM registrations")
+        ).one()
+        guest = connection.execute(text("SELECT name, guest_type FROM registration_guests")).one()
+    assert tuple(registration) == (1, None, None, 1)
+    assert tuple(guest) == ("Ravi Patil", None)
+
+    # No declines exist, so downgrading keeps everything else.
+    command.downgrade(config, "20260928_0004")
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT employee_name FROM registrations")).scalar_one() == "Asha Patil"
+    engine.dispose()
