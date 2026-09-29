@@ -12,7 +12,15 @@ python -m app.cli create-admin --email you@example.com --name "Your Name"
 EMAIL_PROVIDER=console uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Run the tests (SQLite in memory, no MySQL needed): `pytest`. The row-locking and MySQL migration tests in
+Settings are read from `backend/.env` wherever the process is started (the backend folder, the repository root or the
+Vercel entry point), and real environment variables override it. A variable set on the command line wins too, so
+`EMAIL_PROVIDER=console uvicorn ...` prints codes even when `.env` says `smtp`; drop the prefix to use `.env`. Settings
+are read once at startup and `--reload` does not watch `.env`, so **restart the backend after editing `.env`**. Check
+what the backend will use, with the password hidden and addresses masked (nothing is sent):
+`python -m app.cli email-config`.
+
+Run the tests (SQLite in memory, no MySQL needed): `pytest`. Tests never read `backend/.env` (`APP_ENV_FILE` is set
+empty in `tests/conftest.py`). The row-locking and MySQL migration tests in
 `tests/guests/test_capacity_mysql.py` run only when `TEST_MYSQL_URL` points at a disposable database, e.g.
 `TEST_MYSQL_URL=mysql+pymysql://root:pw@127.0.0.1:3306/events_test pytest`. Lint: `ruff check . && ruff format --check .`
 
@@ -124,7 +132,8 @@ closed, 409 for a duplicate employee id or email, 422 when the party is larger t
 
 Email: `EMAIL_PROVIDER=disabled` (default, fails closed with 503), `console` (prints OTPs to stdout, development only),
 or `smtp` (requires SMTP server credentials). A real SMTP provider is configured with `EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`,
-`SMTP_SECURITY`, `SMTP_USERNAME`, and `SMTP_PASSWORD`.
+`SMTP_SECURITY`, `SMTP_USERNAME`, and `SMTP_PASSWORD`. See "Email troubleshooting" in `docs/DEPLOYMENT.md` when codes
+don't arrive.
 
 Put CAPTCHA in front of the registration form before going live; the caps above limit abuse but don't stop bots.
 Behind a reverse proxy, run uvicorn with `--proxy-headers --forwarded-allow-ips=<proxy>` so per-IP caps see the

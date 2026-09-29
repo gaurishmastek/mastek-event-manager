@@ -48,6 +48,10 @@ bumps the user's `session_version`, revoking every earlier token.
   and an app-wide daily email budget (default 2000) — the last is the defence against inbox flooding
   via the public form. All are configurable via `Settings` (`app/core/config.py`).
 - A new OTP invalidates any earlier unconsumed code for the same `(purpose, subject_ref)`.
+- A failed send rolls back the new challenge (and a new registration), so it neither leaves a usable code nor counts
+  against the limits above. The API answers a generic `503`; the SMTP failure kind, stage and numeric code go to the
+  log only, with the recipient and sender masked and addresses stripped from the provider's reply
+  (`notifications/email.py`). STARTTLS and implicit TLS always verify the server certificate.
 - **Not yet implemented**: CAPTCHA on the OTP-send step (`event-management.md` calls for one).
 
 ## Registration links

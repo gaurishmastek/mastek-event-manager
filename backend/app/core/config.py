@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 from typing import Annotated, Literal
 
 from cryptography.fernet import Fernet
@@ -8,11 +10,27 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 _DEV_SECRET_KEY = "dev-only-secret-change-me-0123456789abcdef"  # noqa: S105 - refused in production
 _DEV_PII_ENCRYPTION_KEY = "ZGV2LW9ubHktcGlpLWtleS1jaGFuZ2UtbWUtMDEyMzQ="
 
+# backend/.env, found from this file rather than the working directory, so the backend reads the same file whether it
+# is started from backend/, the repository root or the serverless entry point. Real environment variables still win
+# over it, and a missing file is ignored (deployments set variables in their environment instead).
+DEFAULT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+
+def _env_file() -> Path | None:
+    # APP_ENV_FILE points at another file; set it empty to read no file at all (the test suite does this).
+    override = os.environ.get("APP_ENV_FILE")
+    if override is None:
+        return DEFAULT_ENV_FILE
+    return Path(override) if override.strip() else None
+
+
+ENV_FILE = _env_file()
+
 
 class Settings(BaseSettings):
     """Runtime configuration, read from environment variables (or a local .env)."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "Mastek Event Manager"
     environment: Literal["development", "test", "production"] = "development"

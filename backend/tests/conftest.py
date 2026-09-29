@@ -1,6 +1,8 @@
 import os
 
 # Settings are read at import time, so the test environment is set before the app loads.
+# Tests never read the developer's backend/.env (it may hold real SMTP settings and keys).
+os.environ["APP_ENV_FILE"] = ""
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ.pop("CORS_ORIGINS", None)
 

@@ -15,7 +15,12 @@ Dockerfile, docker-compose file, or CI/CD workflow in the repository.
 
 All runtime configuration is a single `pydantic-settings` class,
 `app/core/config.py::Settings`, read from environment variables or a local `.env` file
-(`backend/.env`, git-ignored). Key variables:
+(`backend/.env`, git-ignored). The file is located from the code (`config.py::DEFAULT_ENV_FILE`), not the working
+directory, so it is read the same way from `backend/`, the repository root or `backend/api/index.py`; a missing file is
+ignored. Environment variables always win over the file, which is how Vercel and any other deployment should set values.
+`APP_ENV_FILE` points at a different file, or set it empty to read none (the test suite does). Settings are read once
+at import: restart the process after changing `.env` or the environment (`uvicorn --reload` does not watch `.env`).
+Key variables:
 
 | Variable | Default | Notes |
 |---|---|---|
@@ -48,6 +53,43 @@ EMAIL_PROVIDER=console uvicorn app.main:app --reload
 Tests: `pytest` (from `backend/`), configuration in `backend/pytest.ini`. Set `TEST_MYSQL_URL` to a disposable
 MySQL database to also run the row-locking and MySQL migration tests. Frontend: `npm run build` and
 `npm run test:ci` (from `frontend/`).
+
+## Email troubleshooting
+
+When codes don't arrive, the API answers `503` ("could not be sent") and the backend logs one warning per failure:
+
+```text
+SMTP delivery failed: kind=auth stage=login code=535 error=SMTPAuthenticationError host=... port=587 security=starttls
+sender=ev•••@example.com recipient=as•••@example.com reply='5.7.8 Incorrect authentication data'
+```
+
+The log never holds the password, the code, the message body or a full address (provider replies have addresses
+replaced by `<address>`). A failed send saves nothing and does not count against the OTP rate limits.
+
+1. **Check the effective settings**: `python -m app.cli email-config` (from `backend/`, or with `PYTHONPATH=backend`
+   from the root). It shows the `.env` file used, the provider, host, port, security mode, masked sender and username,
+   and whether a password is set. `email_provider: disabled` means the file was not found or the variable is not set;
+   the log then says `EMAIL_PROVIDER is disabled`.
+2. **Restart** the backend after any change.
+3. **Read the `kind`** in the warning:
+
+| kind | Meaning | What to check |
+|---|---|---|
+| `not_configured` | Provider is `disabled` | `.env` location, `EMAIL_PROVIDER`, restart |
+| `dns` | Host name did not resolve | `SMTP_HOST` spelling, DNS |
+| `connect` | Refused, reset or closed | Port, firewall, ISP blocking outbound SMTP; `Test-NetConnection <host> -Port 587` (TCP only) |
+| `timeout` | No answer in `SMTP_TIMEOUT_SECONDS` | Outbound SMTP blocked, wrong port for the security mode |
+| `tls` | STARTTLS missing, or the certificate failed verification | `SMTP_SECURITY` matches the port (587 `starttls`, 465 `ssl`); host name matches the certificate. Verification is never turned off |
+| `auth` | Login rejected (usually 535) or no common auth mechanism | Username (often the full mailbox address) and password; rotate and update `.env` |
+| `sender_rejected` | `MAIL FROM` refused (often 553/550) | `EMAIL_FROM` must be the authenticated mailbox or an alias it may send as |
+| `recipient_rejected` | `RCPT TO` refused | Address exists; provider's relay rules for external recipients |
+| `data_rejected` | Message refused after `DATA` (e.g. 554 relay denied, spam, quota) | Provider limits and content policy |
+
+4. **Accepted is not delivered.** No warning means the provider accepted the message. If it still does not arrive, it
+   was filtered, bounced or put in spam after acceptance: check the recipient's spam folder and the mailbox's bounce
+   messages, and make sure the sending domain has SPF, DKIM and DMARC records that cover the SMTP host.
+5. A `429` or a `503` with no SMTP warning comes from the OTP limits (resend cooldown, per-address and per-IP caps,
+   `EMAIL_DAILY_BUDGET`), not from email delivery.
 
 ## Database migrations
 
