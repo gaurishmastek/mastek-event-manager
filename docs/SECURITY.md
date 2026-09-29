@@ -131,7 +131,9 @@ bumps the user's `session_version`, revoking every earlier token.
 ## Not yet implemented
 
 - SPF, DKIM and DMARC on the sending domain. `EMAIL_PROVIDER=smtp` sends over STARTTLS or implicit
-  TLS (`SMTP_SECURITY=none` is refused in production), but deliverability depends on the domain's DNS.
+  TLS (`SMTP_SECURITY=none` is refused in production), and `EMAIL_PROVIDER=mailtrap` over HTTPS with a verified
+  certificate, but deliverability depends on the domain's DNS. `MAILTRAP_API_TOKEN` is a secret like `SMTP_PASSWORD`:
+  environment only, never logged (`email-config` reports only whether it is set).
 - A Content-Security-Policy. `app/main.py` sets `X-Content-Type-Options`, `X-Frame-Options: DENY`,
   `Referrer-Policy`, `Cache-Control: no-store` and `Permissions-Policy: camera=(self), microphone=(), geolocation=()`
   (plus HSTS in production), restricts CORS to `CORS_ORIGINS`, and turns off `/docs` and `/openapi.json` in

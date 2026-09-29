@@ -28,7 +28,7 @@ Key variables:
 | `DATABASE_URL` | `mysql+pymysql://mastek:mastek@localhost:3306/mastek_events` | |
 | `SECRET_KEY` | dev placeholder | Signs staff access tokens; HMAC key for OTP and PII hashes. **Must** be a random ≥32-char value in production |
 | `PII_ENCRYPTION_KEY` | dev placeholder | Fernet key for encrypting guest emails at rest. **Must** be set in production |
-| `EMAIL_PROVIDER` | `disabled` | `disabled` \| `console` \| `smtp`. `console` prints OTPs to stdout and is refused in production. With `smtp`: set `EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT` (default 587), `SMTP_SECURITY` (`starttls`, `ssl`, or `none`), `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_TIMEOUT_SECONDS` (default 10) |
+| `EMAIL_PROVIDER` | `disabled` | `disabled` \| `console` \| `smtp` \| `mailtrap`. `console` prints OTPs to stdout and is refused in production. With `smtp`: set `EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT` (default 587), `SMTP_SECURITY` (`starttls`, `ssl`, or `none`), `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_TIMEOUT_SECONDS` (default 10). With `mailtrap`: set `EMAIL_FROM` and `MAILTRAP_API_TOKEN` (secret), optionally `MAILTRAP_CATEGORY` (default `Mastek Event Manager`); see "Mailtrap" below |
 | `OTP_TTL_SECONDS`, `OTP_MAX_ATTEMPTS`, `OTP_RESEND_COOLDOWN_SECONDS`, `OTP_MAX_PER_EMAIL_PER_HOUR`, `OTP_MAX_PER_EMAIL_PER_DAY`, `OTP_MAX_PER_IP_PER_HOUR`, `EMAIL_DAILY_BUDGET` | see `config.py` | OTP/anti-abuse tuning — see [`SECURITY.md`](./SECURITY.md) |
 | `ACCESS_TOKEN_EXPIRE_MINUTES`, `OFFICER_SESSION_MINUTES` | `30`, `480` | Admin and officer session lengths |
 | `MAX_FAILED_LOGIN_ATTEMPTS`, `LOCKOUT_MINUTES` | `5`, `15` | Admin password lockout |
@@ -37,7 +37,8 @@ Key variables:
 
 The app **refuses to start** with `ENVIRONMENT=production` if `SECRET_KEY` or
 `PII_ENCRYPTION_KEY` are still the checked-in dev defaults, or if `EMAIL_PROVIDER=console` — see
-[`SECURITY.md`](./SECURITY.md). `EMAIL_PROVIDER=smtp` requires `SMTP_HOST` and `EMAIL_FROM` at startup.
+[`SECURITY.md`](./SECURITY.md). `EMAIL_PROVIDER=smtp` requires `SMTP_HOST` and `EMAIL_FROM` at startup; `EMAIL_PROVIDER=mailtrap` requires
+`MAILTRAP_API_TOKEN` and `EMAIL_FROM`.
 
 ## Running locally
 
@@ -54,11 +55,33 @@ Tests: `pytest` (from `backend/`), configuration in `backend/pytest.ini`. Set `T
 MySQL database to also run the row-locking and MySQL migration tests. Frontend: `npm run build` and
 `npm run test:ci` (from `frontend/`).
 
+## Mailtrap
+
+`EMAIL_PROVIDER=mailtrap` sends OTPs and notifications through the Mailtrap Email API with the official `mailtrap`
+SDK (already in `requirements.txt`; `pip install -r requirements.txt` installs it).
+
+1. In Mailtrap, add and verify a sending domain (SPF, DKIM and DMARC records), or use the demo domain Mailtrap gives a
+   new account for a first test (it only delivers to the account owner's own address).
+2. Create an API token with access to that domain at <https://mailtrap.io/settings/api-tokens>.
+3. Set, in `backend/.env` or the deployment's environment (never in code):
+
+   ```text
+   EMAIL_PROVIDER=mailtrap
+   MAILTRAP_API_TOKEN=<your API token>
+   EMAIL_FROM="Mastek Events <no-reply@your-verified-domain>"
+   ```
+
+4. Restart the backend, then `python -m app.cli email-config` (shows `mailtrap_api_token_configured: True`, never the
+   token) and `python -m app.cli send-test-email --to you@example.com`.
+5. Check delivery status for every message in Mailtrap's email logs: <https://mailtrap.io/sending/email_logs>. Mail
+   from this app is tagged with the category `MAILTRAP_CATEGORY`.
+
 ## Email troubleshooting
 
 When codes don't arrive, the API answers `503` ("could not be sent") and the backend logs one warning per failure:
 
 ```text
+Mailtrap delivery failed: kind=auth status=401 error=AuthorizationError sender=ev•••@example.com recipient=... reply='Unauthorized'
 SMTP delivery failed: kind=auth stage=login code=535 error=SMTPAuthenticationError host=... port=587 security=starttls
 sender=ev•••@example.com recipient=as•••@example.com reply='5.7.8 Incorrect authentication data'
 ```
@@ -83,7 +106,12 @@ replaced by `<address>`). A failed send saves nothing and does not count against
 | `auth` | Login rejected (usually 535) or no common auth mechanism | Username (often the full mailbox address) and password; rotate and update `.env` |
 | `sender_rejected` | `MAIL FROM` refused (often 553/550) | `EMAIL_FROM` must be the authenticated mailbox or an alias it may send as |
 | `recipient_rejected` | `RCPT TO` refused | Address exists; provider's relay rules for external recipients |
-| `data_rejected` | Message refused after `DATA` (e.g. 554 relay denied, spam, quota) | Provider limits and content policy |
+| `data_rejected` | Message refused after `DATA` (e.g. 554 relay denied, spam, quota); Mailtrap: another 4xx | Provider limits and content policy; the logged `reply` names the field |
+| `rate_limited` | Mailtrap answered 429 | Sending too fast or over the plan's limit; wait and retry |
+
+With Mailtrap, `auth` is a 401 (token missing, mistyped or revoked: check `MAILTRAP_API_TOKEN`), `sender_rejected` is
+a 403 (the token has no access to the sending domain, or `EMAIL_FROM` is not on a verified domain), and `connect`,
+`timeout` and `tls` are network failures reaching `send.api.mailtrap.io` over HTTPS.
 
 4. **Accepted is not delivered.** No warning means the provider accepted the message. If it still does not arrive, it
    was filtered, bounced or put in spam after acceptance: check the recipient's spam folder and the mailbox's bounce
@@ -155,7 +183,7 @@ None of the following exist in the repository yet:
   `--proxy-headers --forwarded-allow-ips` on uvicorn, noted as a comment in
   `guests/router.py::_client_ip`, but nothing wires that up yet).
 - Custom HTTPS/TLS termination for non-Vercel deployment (Vercel terminates HTTPS for its deployment domains).
-- A production mail account. Set `EMAIL_PROVIDER=smtp` with the SMTP settings above, and add SPF,
+- A production mail account. Set `EMAIL_PROVIDER=smtp` with the SMTP settings above (or `mailtrap`, see "Mailtrap"), and add SPF,
   DKIM and DMARC records on the sending domain so codes do not land in spam.
 - Email delivery is needed before anyone can sign in outside development: admins and officers
   receive their sign-in codes by email. Create the first admin with

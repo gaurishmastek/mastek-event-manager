@@ -131,8 +131,10 @@ closed, 409 for a duplicate employee id or email, 422 when the party is larger t
 `Retry-After` when throttled, 503 when email can't be sent.
 
 Email: `EMAIL_PROVIDER=disabled` (default, fails closed with 503), `console` (prints OTPs to stdout, development only),
-or `smtp` (requires SMTP server credentials). A real SMTP provider is configured with `EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`,
-`SMTP_SECURITY`, `SMTP_USERNAME`, and `SMTP_PASSWORD`. See "Email troubleshooting" in `docs/DEPLOYMENT.md` when codes
+`smtp` (requires SMTP server credentials), or `mailtrap` (Mailtrap Email API). A real SMTP provider is configured with
+`EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USERNAME`, and `SMTP_PASSWORD`; Mailtrap with `EMAIL_FROM`
+and `MAILTRAP_API_TOKEN` (see "Mailtrap" in `docs/DEPLOYMENT.md`). `python -m app.cli send-test-email --to ...` sends one
+test message through whichever provider is set. See "Email troubleshooting" in `docs/DEPLOYMENT.md` when codes
 don't arrive.
 
 Put CAPTCHA in front of the registration form before going live; the caps above limit abuse but don't stop bots.
