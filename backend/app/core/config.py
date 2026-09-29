@@ -50,9 +50,9 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed frontend origins.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:4200"]
 
-    # Email delivery for OTPs and notifications. "smtp" sends through the SMTP server below; "console" prints
-    # messages to stdout for local development and is refused in production.
-    email_provider: Literal["disabled", "console", "smtp"] = "disabled"
+    # Email delivery for OTPs and notifications. "smtp" sends through the SMTP server below; "mailtrap" sends through
+    # the Mailtrap Email API; "console" prints messages to stdout for local development and is refused in production.
+    email_provider: Literal["disabled", "console", "smtp", "mailtrap"] = "disabled"
     email_from: str = ""
     smtp_host: str = ""
     smtp_port: int = Field(default=587, ge=1, le=65535)
@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # starttls (usually port 587), ssl (implicit TLS, usually 465), or none (local test servers only).
     smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
     smtp_timeout_seconds: int = Field(default=10, ge=1, le=120)
+    # Mailtrap Email API (EMAIL_PROVIDER=mailtrap). The token is a secret: set MAILTRAP_API_TOKEN in the environment
+    # or backend/.env, never in code. EMAIL_FROM must be on a sending domain verified in Mailtrap.
+    mailtrap_api_token: str = ""
+    # Shown in Mailtrap's email logs and stats, to tell this app's mail apart from other senders on the account.
+    mailtrap_category: str = Field(default="Mastek Event Manager", max_length=255)
 
     # OTP rules and anti-abuse caps (per email address, per client IP, and for the whole app per day).
     otp_ttl_seconds: int = 300
@@ -108,6 +113,12 @@ class Settings(BaseSettings):
     def _smtp_needs_a_server(self) -> "Settings":
         if self.email_provider == "smtp" and not (self.smtp_host and self.email_from):
             raise ValueError("EMAIL_PROVIDER=smtp needs SMTP_HOST and EMAIL_FROM")
+        return self
+
+    @model_validator(mode="after")
+    def _mailtrap_needs_a_token(self) -> "Settings":
+        if self.email_provider == "mailtrap" and not (self.mailtrap_api_token.strip() and self.email_from):
+            raise ValueError("EMAIL_PROVIDER=mailtrap needs MAILTRAP_API_TOKEN and EMAIL_FROM")
         return self
 
     @model_validator(mode="after")

@@ -9,3 +9,4 @@ PyJWT==2.15.0
 argon2-cffi==25.1.0
 cryptography==46.0.3
 segno==1.6.6
+mailtrap==2.10.0

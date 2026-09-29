@@ -1,11 +1,12 @@
 """Email delivery for OTPs and other notifications.
 
-`EMAIL_PROVIDER` picks the adapter: `smtp` sends through the configured SMTP server, `console` prints
-messages to stdout for local development (refused in production), and `disabled` refuses to send.
+`EMAIL_PROVIDER` picks the adapter: `smtp` sends through the configured SMTP server, `mailtrap` sends through the
+Mailtrap Email API (https://mailtrap.io), `console` prints messages to stdout for local development (refused in
+production), and `disabled` refuses to send.
 
-SMTP failures are classified (`EmailDeliveryError.kind`) and logged with the stage, the numeric SMTP code and a
-redacted provider reply, so an operator can tell a DNS problem from a rejected login or a refused sender without the
-log ever holding a credential, the message body or a full address.
+SMTP and Mailtrap failures are classified (`EmailDeliveryError.kind`) and logged with the stage, the numeric SMTP
+code (or HTTP status) and a redacted provider reply, so an operator can tell a DNS problem from a rejected login or a
+refused sender without the log ever holding a credential, the message body or a full address.
 """
 
 import logging
@@ -33,6 +34,7 @@ AUTH = "auth"
 SENDER_REJECTED = "sender_rejected"
 RECIPIENT_REJECTED = "recipient_rejected"
 DATA_REJECTED = "data_rejected"
+RATE_LIMITED = "rate_limited"
 UNKNOWN = "unknown"
 
 _ADDRESS = re.compile(r"[^\s<>@\"']+@[^\s<>@\"']+")
@@ -170,6 +172,73 @@ class SmtpEmailSender:
             ) from exc
 
 
+def classify_mailtrap_failure(exc: BaseException) -> str:
+    """Map an exception raised by the Mailtrap SDK (or the HTTP library under it) to a failure kind."""
+    import mailtrap as mt
+    import requests
+
+    # Order matters: SSLError and ConnectTimeout are both ConnectionErrors.
+    if isinstance(exc, requests.exceptions.SSLError):
+        return TLS
+    if isinstance(exc, requests.exceptions.Timeout):
+        return TIMEOUT
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return CONNECT
+    if isinstance(exc, mt.APIError):
+        if exc.status == 401:
+            return AUTH  # Token missing, revoked or mistyped.
+        if exc.status == 403:
+            return SENDER_REJECTED  # Token lacks access to the sending domain, or EMAIL_FROM is not on it.
+        if exc.status == 429:
+            return RATE_LIMITED
+        if 400 <= exc.status < 500:
+            return DATA_REJECTED
+    return UNKNOWN
+
+
+class MailtrapEmailSender:
+    """Sends plain-text mail through the Mailtrap Email API (HTTPS, certificate verified by `requests`).
+
+    `EMAIL_FROM` ("Name <address>" or a bare address) must be on a sending domain verified in Mailtrap, and
+    `MAILTRAP_API_TOKEN` must have access to that domain. Delivery status for each message is in Mailtrap's email logs.
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def send(self, to: str, subject: str, body: str) -> None:
+        # Imported here so the SDK only loads when this provider is chosen.
+        import mailtrap as mt
+
+        s = self.settings
+        sender_name, sender_email = parseaddr(s.email_from)
+        mail = mt.Mail(
+            sender=mt.Address(email=sender_email, name=sender_name or None),
+            to=[mt.Address(email=to)],
+            subject=subject,
+            text=body,
+            category=s.mailtrap_category or None,
+        )
+        try:
+            mt.MailtrapClient(token=s.mailtrap_api_token).send(mail)
+        except Exception as exc:  # the SDK raises MailtrapError, requests errors and pydantic validation errors
+            kind = classify_mailtrap_failure(exc)
+            status = getattr(exc, "status", None)
+            errors = "; ".join(getattr(exc, "errors", None) or [])
+            logger.warning(
+                "Mailtrap delivery failed: kind=%s status=%s error=%s sender=%s recipient=%s reply=%r",
+                kind,
+                status,
+                exc.__class__.__name__,
+                mask_email(sender_email),
+                mask_email(to),
+                redact_smtp_reply(errors),
+            )
+            raise EmailDeliveryError(
+                f"Mailtrap delivery failed: {kind} ({exc.__class__.__name__}, status {status})", kind=kind, stage="send"
+            ) from exc
+
+
 def email_config_summary(settings: Settings) -> dict[str, object]:
     """The effective email configuration with nothing secret in it: no password, and addresses masked."""
     from app.core.config import ENV_FILE
@@ -188,6 +257,8 @@ def email_config_summary(settings: Settings) -> dict[str, object]:
         "email_from": mask_email(sender) if "@" in sender else "(empty or invalid)",
         "smtp_username": (mask_email(username) if "@" in username else "(set)") if username else "(empty)",
         "smtp_password_configured": bool(settings.smtp_password),
+        "mailtrap_api_token_configured": bool(settings.mailtrap_api_token.strip()),
+        "mailtrap_category": settings.mailtrap_category or "(empty)",
     }
 
 
@@ -195,6 +266,8 @@ def get_email_sender() -> EmailSender:
     settings = get_settings()
     if settings.email_provider == "smtp":
         return SmtpEmailSender(settings)
+    if settings.email_provider == "mailtrap":
+        return MailtrapEmailSender(settings)
     if settings.email_provider == "console" and not settings.is_production:
         return ConsoleEmailSender()
     return DisabledEmailSender()
