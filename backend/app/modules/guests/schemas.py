@@ -27,9 +27,10 @@ KidAge = Annotated[int, Field(ge=MIN_KID_AGE, le=MAX_KID_AGE, strict=True)]
 OtpCode = Annotated[str, StringConstraints(pattern=r"^\d{6}$")]
 StatusFilter = Literal["PENDING_OTP", "VERIFIED", "CHECKED_IN", "DECLINED"]
 
-# An attending employee may bring one adult family member and up to four kids.
+# An attending employee may bring one adult family member and up to three kids. MAX_ACCOMPANYING_KIDS is
+# mirrored as MAX_KIDS in frontend/src/app/public/registration-form.ts.
 MAX_ACCOMPANYING_ADULTS = 1
-MAX_ACCOMPANYING_KIDS = 4
+MAX_ACCOMPANYING_KIDS = 3
 # Whether an employee attending alone (no family) must still choose a food preference. Attendees who bring
 # family always must. Mirrored in frontend/src/app/public/registration-form.ts.
 FOOD_PREFERENCE_REQUIRED_WHEN_ALONE = True

@@ -1,4 +1,4 @@
-"""Registration form answers: event attendance, accompanying family (one adult, up to four kids) and food preference."""
+"""Registration answers: event attendance, accompanying family (one adult, up to three kids) and food preference."""
 
 import pytest
 from sqlalchemy import select
@@ -163,9 +163,9 @@ def test_attends_with_kids_only(client, mailbox, make_event):
     assert guest_pass["kid_names"] == ["Meera Patil", "Kiran Patil"]
 
 
-@pytest.mark.parametrize("kid_count", [1, 2, 3, 4])
-def test_attends_with_one_adult_and_up_to_four_kids(client, mailbox, make_event, db_session, kid_count):
-    kids = ["Meera Patil", "Kiran Patil", "Tara Patil", "Dev Patil"][:kid_count]
+@pytest.mark.parametrize("kid_count", [1, 2, 3])
+def test_attends_with_one_adult_and_up_to_three_kids(client, mailbox, make_event, db_session, kid_count):
+    kids = ["Meera Patil", "Kiran Patil", "Tara Patil"][:kid_count]
 
     started = post(client, make_event(), with_family(adult="Ravi Patil", kids=kids))
     guest_pass = verify(client, started.json()["registration_id"], mailbox.last_code).json()
@@ -194,13 +194,13 @@ def test_family_still_respects_the_event_guest_limit(client, mailbox, make_event
 # --- conditional validation -----------------------------------------------------
 
 
-def test_more_than_four_kids_is_rejected(client, mailbox, make_event):
-    kids = ["Meera Patil", "Kiran Patil", "Tara Patil", "Dev Patil", "Ria Patil"]
+def test_more_than_three_kids_is_rejected(client, mailbox, make_event):
+    kids = ["Meera Patil", "Kiran Patil", "Tara Patil", "Dev Patil"]
 
     response = post(client, make_event(), with_family(kids=kids))
 
     assert response.status_code == 422
-    assert "at most 4 kids" in response.text
+    assert "at most 3 kids" in response.text
     assert mailbox.sent == []
 
 

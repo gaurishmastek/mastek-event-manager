@@ -46,7 +46,8 @@ file calls out where current code differs from that spec.
   - `accompanying_adult` / `accompanying_kids`: the "Adult" and "Kids" checkboxes. When family is attending, at least
     one must be `true`. At most **one** adult: there is a single `adult_name` field and no list of adults.
   - `adult_name`: required when `accompanying_adult` is `true`, forbidden otherwise.
-  - `kid_names`: 1–4 names when `accompanying_kids` is `true`, empty otherwise. More than 4 kids is `422`.
+  - `kid_names`: 1–3 names when `accompanying_kids` is `true`, empty otherwise. More than 3 kids is `422`
+    (`MAX_ACCOMPANYING_KIDS`, mirrored by the frontend's `MAX_KIDS`).
   - `kid_ages`: one age per kid, in the same order as `kid_names`: a whole number of years from 0 to 17 (strict
     integers). A missing, extra or out-of-range age is `422`, and ages are forbidden whenever `kid_names` is. The form
     shows an Age field beside every kid's name and clears it together with that name.

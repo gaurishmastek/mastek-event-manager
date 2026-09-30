@@ -120,7 +120,7 @@ export interface RegistrationCreate {
   /** Required when `accompanying_adult` is true. */
   adult_name?: string | null;
   accompanying_kids?: boolean;
-  /** 1 to 4 names when `accompanying_kids` is true. */
+  /** 1 to 3 names (`MAX_KIDS`) when `accompanying_kids` is true. */
   kid_names?: string[];
   /** Each kid's age in whole years (0 to 17), in the same order as `kid_names`. */
   kid_ages?: number[];
