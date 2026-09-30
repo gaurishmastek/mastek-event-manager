@@ -35,8 +35,8 @@ file calls out where current code differs from that spec.
     case-insensitively (stored as entered plus an upper-cased copy for uniqueness).
   - `employee_name`, `adult_name` and each of `kid_names`: 2–100 characters, single line, no control characters.
   - `email`: validated, trimmed, lowercased. OTPs go only here.
-  - `mobile`: a valid Indian mobile number, normalized to `+91XXXXXXXXXX` (`app/core/mobile.py`). Stored, never
-    messaged.
+  - `mobile`: optional. When provided, it must be a valid Indian mobile number and is normalized to
+    `+91XXXXXXXXXX` (`app/core/mobile.py`). Blank, null or omitted values are stored as null. Never messaged.
   - `attending` ("Will you be attending the event on {event date}?"): required `true`/`false` (strict booleans).
     When `false`, every field below except `consent` must be left out (or null/false/empty); sending any of them is
     `422`. A non-attending employee still verifies their email by OTP; the registration then becomes `DECLINED`

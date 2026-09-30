@@ -9,6 +9,7 @@ from pydantic import (
     Field,
     StrictBool,
     StringConstraints,
+    field_validator,
     model_validator,
 )
 
@@ -49,7 +50,9 @@ class RegistrationCreate(_StrictInput):
     employee_id: EmployeeId
     employee_name: PersonName
     email: Email
-    mobile: Mobile = Field(description="Indian mobile number, stored as +91XXXXXXXXXX. OTPs still go by email only")
+    mobile: Mobile | None = Field(
+        default=None, description="Optional Indian mobile number, stored as +91XXXXXXXXXX. OTPs still go by email only"
+    )
     attending: StrictBool = Field(description="Will the employee attend the event?")
     family_attending: StrictBool | None = Field(
         default=None, description="Will family members accompany the employee? Required when attending"
@@ -66,6 +69,11 @@ class RegistrationCreate(_StrictInput):
     consent: Literal[True] = Field(
         description="Employee agrees to their and their guests' details being used for event entry"
     )
+
+    @field_validator("mobile", mode="before")
+    @classmethod
+    def _blank_mobile_is_absent(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
     @model_validator(mode="after")
     def _answers_are_consistent(self) -> "RegistrationCreate":

@@ -58,7 +58,7 @@ Do not introduce these features unless the user explicitly requests them:
 - Prefer a modular monolith.
 - Preserve the repository's existing technology choices unless a change is justified.
 - For greenfield backend work, prefer FastAPI + SQLAlchemy + Alembic + MySQL.
-- For greenfield frontend/public-site work, prefer Angular + TypeScript + Tailwind CSS + shadcn/ui.
+- For greenfield frontend/public-site work, prefer Angular + TypeScript + Tailwind CSS + ui.
 - Do not introduce microservices without explicit approval.
 - Use backend authorization for all protected operations.
 - Use database migrations for every schema change.

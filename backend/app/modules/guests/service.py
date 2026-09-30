@@ -235,9 +235,9 @@ class GuestRegistrationService:
         registration.email_hash = identity.email_hash
         registration.email_encrypted = encrypt_pii(data.email)
         registration.email_masked = mask_email(data.email)
-        registration.mobile_hash = keyed_hash(data.mobile, purpose="mobile")
-        registration.mobile_encrypted = encrypt_pii(data.mobile)
-        registration.mobile_masked = mask_mobile(data.mobile)
+        registration.mobile_hash = keyed_hash(data.mobile, purpose="mobile") if data.mobile is not None else None
+        registration.mobile_encrypted = encrypt_pii(data.mobile) if data.mobile is not None else None
+        registration.mobile_masked = mask_mobile(data.mobile) if data.mobile is not None else None
         registration.attending = data.attending
         registration.family_attending = data.family_attending
         registration.food_preference = data.food_preference.value if data.food_preference is not None else None
