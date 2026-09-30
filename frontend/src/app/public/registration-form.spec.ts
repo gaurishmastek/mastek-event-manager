@@ -7,6 +7,8 @@ import {
   foodPreferenceError,
   guestCountError,
   isFormValid,
+  kidAgeError,
+  MAX_KIDS,
   kidsError,
   mobileError,
   partyError,
@@ -27,10 +29,16 @@ function form(overrides: Partial<RegistrationFormValue> = {}): RegistrationFormV
     withKids: true,
     adultName: 'Ravi Patil',
     kidNames: ['Meera Patil'],
+    kidAges: ['6'],
     foodPreference: 'VEG',
     consent: true,
     ...overrides,
   };
+}
+
+/** `count` distinct valid kid names. */
+function kids(count: number): string[] {
+  return Array.from({ length: count }, (_, i) => `Kid Patil ${i + 1}`);
 }
 
 const BASE_PAYLOAD = {
@@ -54,6 +62,7 @@ describe('registration form rules', () => {
           withKids: false,
           adultName: '',
           kidNames: [],
+          kidAges: [],
           foodPreference: null,
         }),
       );
@@ -69,10 +78,17 @@ describe('registration form rules', () => {
     it('clears the adult name when Adult is unticked and kid names when Kids is unticked', () => {
       expect(clearInapplicable(form({ withAdult: false })).adultName).toBe('');
       expect(clearInapplicable(form({ withKids: false })).kidNames).toEqual([]);
+      expect(clearInapplicable(form({ withKids: false })).kidAges).toEqual([]);
+      expect(clearInapplicable(form({ familyAttending: false })).kidAges).toEqual([]);
     });
 
-    it('never keeps more than four kids', () => {
-      expect(clearInapplicable(form({ kidNames: ['A1', 'A2', 'A3', 'A4', 'A5'] })).kidNames.length).toBe(4);
+    it('keeps exactly one age per kid', () => {
+      expect(clearInapplicable(form({ kidNames: ['A1', 'A2'], kidAges: ['4'] })).kidAges).toEqual(['4', '']);
+      expect(clearInapplicable(form({ kidNames: ['A1'], kidAges: ['4', '9'] })).kidAges).toEqual(['4']);
+    });
+
+    it('never keeps more than the kid limit', () => {
+      expect(clearInapplicable(form({ kidNames: kids(MAX_KIDS + 1) })).kidNames.length).toBe(MAX_KIDS);
     });
   });
 
@@ -125,11 +141,19 @@ describe('registration form rules', () => {
     expect(familyMembersError(form({ familyAttending: false, withAdult: false, withKids: false }))).toBeNull();
   });
 
-  it('requires one to four kids when Kids is ticked', () => {
+  it('requires one kid up to the kid limit when Kids is ticked', () => {
     expect(kidsError(form({ kidNames: [] }))).toContain('at least one');
-    expect(kidsError(form({ kidNames: ['A1', 'A2', 'A3', 'A4', 'A5'] }))).toContain('at most 4');
-    expect(kidsError(form({ kidNames: ['A1', 'A2', 'A3', 'A4'] }))).toBeNull();
+    expect(kidsError(form({ kidNames: kids(MAX_KIDS + 1) }))).toContain(`at most ${MAX_KIDS}`);
+    expect(kidsError(form({ kidNames: kids(MAX_KIDS) }))).toBeNull();
     expect(kidsError(form({ withKids: false, kidNames: [] }))).toBeNull();
+  });
+
+  it('accepts kid ages from 0 to 17 in whole years only', () => {
+    for (const age of ['0', '5', '17', ' 9 ']) expect(kidAgeError(age)).withContext(age).toBeNull();
+    expect(kidAgeError('')).toBe('Enter an age.');
+    for (const age of ['18', '-1', '5.5', 'abc', '100']) {
+      expect(kidAgeError(age)).withContext(age).toContain('from 0 to 17');
+    }
   });
 
   it('requires a food preference from attendees only', () => {
@@ -143,7 +167,8 @@ describe('registration form rules', () => {
       expect(isFormValid(form(), 5, 100)).toBeTrue();
       expect(isFormValid(form({ withKids: false }), 5, 100)).toBeTrue(); // adult only
       expect(isFormValid(form({ withAdult: false }), 5, 100)).toBeTrue(); // kids only
-      expect(isFormValid(form({ kidNames: ['A1', 'A2', 'A3', 'A4'] }), 5, 100)).toBeTrue();
+      const most = kids(MAX_KIDS);
+      expect(isFormValid(form({ kidNames: most, kidAges: most.map((_, i) => String(i + 1)) }), 5, 100)).toBeTrue();
       expect(isFormValid(form({ familyAttending: false }), 5, 100)).toBeTrue(); // alone
     });
 
@@ -158,6 +183,9 @@ describe('registration form rules', () => {
       expect(isFormValid(form({ adultName: '' }), 5, 100)).toBeFalse();
       expect(isFormValid(form({ kidNames: ['Meera Patil', ''] }), 5, 100)).toBeFalse();
       expect(isFormValid(form({ kidNames: [] }), 5, 100)).toBeFalse();
+      expect(isFormValid(form({ kidAges: [''] }), 5, 100)).toBeFalse();
+      expect(isFormValid(form({ kidAges: ['18'] }), 5, 100)).toBeFalse();
+      expect(isFormValid(form({ kidNames: ['A1', 'A2'], kidAges: ['4'] }), 5, 100)).toBeFalse();
       expect(isFormValid(form({ withAdult: false, withKids: false }), 5, 100)).toBeFalse();
       expect(isFormValid(form({ foodPreference: null }), 5, 100)).toBeFalse();
       expect(isFormValid(form(), 1, 100)).toBeFalse(); // over the event's guest limit
@@ -180,7 +208,7 @@ describe('registration form rules', () => {
 
     it('sends trimmed family names, dropping the unticked adult', () => {
       const payload = toRegistrationPayload(
-        form({ employeeId: ' MT-104 ', withAdult: false, kidNames: [' Meera Patil ', 'Kiran'], foodPreference: 'FAST_FOOD' }),
+        form({ employeeId: ' MT-104 ', withAdult: false, kidNames: [' Meera Patil ', 'Kiran'], kidAges: [' 3 ', '12'], foodPreference: 'FAST_FOOD' }),
       );
 
       expect(payload).toEqual({
@@ -191,6 +219,7 @@ describe('registration form rules', () => {
         adult_name: null,
         accompanying_kids: true,
         kid_names: ['Meera Patil', 'Kiran'],
+        kid_ages: [3, 12],
         food_preference: 'FAST_FOOD',
       });
     });

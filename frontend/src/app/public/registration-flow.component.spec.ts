@@ -5,6 +5,7 @@ import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { environment } from '../../environments/environment';
 import type { PublicEventInfo } from '../core/models';
 import { RegistrationFlowComponent } from './registration-flow.component';
+import { MAX_KIDS } from './registration-form';
 
 const PUBLIC_ID = '3f2b8c1e-8a4d-4b7e-9c2a-1d2e3f4a5b6c';
 
@@ -30,6 +31,10 @@ describe('RegistrationFlowComponent', () => {
 
   function kidInputs(): HTMLInputElement[] {
     return Array.from(fixture.nativeElement.querySelectorAll('input[id^="kid-name-"]'));
+  }
+
+  function ageInputs(): HTMLInputElement[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('input[id^="kid-age-"]'));
   }
 
   async function settle(): Promise<void> {
@@ -150,30 +155,56 @@ describe('RegistrationFlowComponent', () => {
     expect(el<HTMLInputElement>('#adult-name').value).toBe('');
   });
 
-  it('lets the guest add up to four kids and remove them, with labelled required fields', async () => {
+  it('lets the guest add kids up to the limit and remove them, with a labelled age beside each name', async () => {
     await click('#attending-yes');
     await click('#family-yes');
     await click('#with-kids');
     expect(kidInputs().map((input) => input.id)).toEqual(['kid-name-0']);
+    expect(ageInputs().map((input) => input.id)).toEqual(['kid-age-0']);
     expect(el('#remove-kid-0')).toBeNull(); // at least one kid is required
 
     await type('#kid-name-0', 'Meera');
+    await type('#kid-age-0', '6');
     await click('#add-kid');
     await type('#kid-name-1', 'Kiran');
-    await click('#add-kid');
-    await click('#add-kid');
-    expect(kidInputs().length).toBe(4);
-    expect(el('label[for="kid-name-3"]').textContent).toContain('Kid 4');
+    await type('#kid-age-1', '9');
+    while (el('#add-kid')) await click('#add-kid');
+    const last = MAX_KIDS - 1;
+    expect(kidInputs().length).toBe(MAX_KIDS);
+    expect(el(`label[for="kid-name-${last}"]`).textContent).toContain(`Kid ${MAX_KIDS}`);
     expect(kidInputs().every((input) => input.required)).toBeTrue();
+    expect(ageInputs().length).toBe(MAX_KIDS); // an age field beside every kid name
+    expect(ageInputs().every((input) => input.required && input.min === '0' && input.max === '17')).toBeTrue();
+    expect(el(`label[for="kid-age-${last}"]`).textContent).toContain(`Kid ${MAX_KIDS}`);
+    expect(el(`label[for="kid-age-${last}"]`).textContent).toContain('Age');
+    // The name and age sit side by side in one row.
+    expect(el('#kid-age-0').closest('.items-end')).toBe(el('#kid-name-0').closest('.items-end'));
     expect(el('#add-kid')).toBeNull(); // no fifth kid
 
     await click('#remove-kid-0');
-    expect(kidInputs().map((input) => input.value)).toEqual(['Kiran', '', '']);
+    const empties = Array(MAX_KIDS - 2).fill('');
+    expect(kidInputs().map((input) => input.value)).toEqual(['Kiran', ...empties]);
+    expect(ageInputs().map((input) => input.value)).toEqual(['9', ...empties]); // each age stays with its kid
     expect(el('#add-kid')).not.toBeNull();
     expect(el('#remove-kid-1').getAttribute('aria-label')).toBe('Remove kid 2');
 
     await click('#with-kids');
     expect(kidInputs().length).toBe(0);
+    expect(ageInputs().length).toBe(0);
+    await click('#with-kids');
+    expect(ageInputs().map((input) => input.value)).toEqual(['']); // cleared, not restored
+  });
+
+  it('shows an error for a kid age outside 0 to 17', async () => {
+    await click('#attending-yes');
+    await click('#family-yes');
+    await click('#with-kids');
+    await type('#kid-age-0', '18');
+    el<HTMLInputElement>('#kid-age-0').dispatchEvent(new Event('blur'));
+    await settle();
+
+    expect(el('#kid-age-0-error').textContent).toContain('from 0 to 17');
+    expect(el('#kid-age-0').getAttribute('aria-invalid')).toBe('true');
   });
 
   it('lets a guest who is not attending submit without answering anything else', async () => {
@@ -233,7 +264,11 @@ describe('RegistrationFlowComponent', () => {
     await click('#with-kids');
     await type('#adult-name', ' Ravi Patil ');
     await type('#kid-name-0', 'Meera Patil');
-    expect(submit().disabled).toBeTrue(); // food preference missing
+    await click('#food-FAST_FOOD');
+    expect(submit().disabled).toBeTrue(); // kid age missing
+    await type('#kid-age-0', '7');
+    await click('#food-VEG');
+    await click('#food-FAST_FOOD');
     await click('#food-FAST_FOOD');
     expect(submit().disabled).toBeFalse();
 
@@ -251,6 +286,7 @@ describe('RegistrationFlowComponent', () => {
       adult_name: 'Ravi Patil',
       accompanying_kids: true,
       kid_names: ['Meera Patil'],
+      kid_ages: [7],
       food_preference: 'FAST_FOOD',
       consent: true,
     });

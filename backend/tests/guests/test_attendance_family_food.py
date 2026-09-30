@@ -1,4 +1,4 @@
-"""Registration form answers: event attendance, accompanying family (one adult, up to four kids) and food preference."""
+"""Registration answers: event attendance, accompanying family (one adult, up to three kids) and food preference."""
 
 import pytest
 from sqlalchemy import select
@@ -24,6 +24,7 @@ def body(**answers) -> dict:
         "accompanying_kids",
         "adult_name",
         "kid_names",
+        "kid_ages",
         "food_preference",
     ):
         base.pop(key, None)
@@ -34,14 +35,18 @@ def post(client, event, data: dict):
     return client.post(f"{BASE}/events/{event.public_id}/registrations", json=data)
 
 
-def with_family(adult: str | None = None, kids: list[str] | None = None, food: str = "VEG") -> dict:
+def with_family(
+    adult: str | None = None, kids: list[str] | None = None, food: str = "VEG", ages: list | None = None
+) -> dict:
+    kids = kids or []
     return body(
         attending=True,
         family_attending=True,
         accompanying_adult=adult is not None,
         adult_name=adult,
         accompanying_kids=bool(kids),
-        kid_names=kids or [],
+        kid_names=kids,
+        kid_ages=ages if ages is not None else [5 + i for i in range(len(kids))],
         food_preference=food,
     )
 
@@ -158,9 +163,9 @@ def test_attends_with_kids_only(client, mailbox, make_event):
     assert guest_pass["kid_names"] == ["Meera Patil", "Kiran Patil"]
 
 
-@pytest.mark.parametrize("kid_count", [1, 2, 3, 4])
-def test_attends_with_one_adult_and_up_to_four_kids(client, mailbox, make_event, db_session, kid_count):
-    kids = ["Meera Patil", "Kiran Patil", "Tara Patil", "Dev Patil"][:kid_count]
+@pytest.mark.parametrize("kid_count", [1, 2, 3])
+def test_attends_with_one_adult_and_up_to_three_kids(client, mailbox, make_event, db_session, kid_count):
+    kids = ["Meera Patil", "Kiran Patil", "Tara Patil"][:kid_count]
 
     started = post(client, make_event(), with_family(adult="Ravi Patil", kids=kids))
     guest_pass = verify(client, started.json()["registration_id"], mailbox.last_code).json()
@@ -189,13 +194,13 @@ def test_family_still_respects_the_event_guest_limit(client, mailbox, make_event
 # --- conditional validation -----------------------------------------------------
 
 
-def test_more_than_four_kids_is_rejected(client, mailbox, make_event):
-    kids = ["Meera Patil", "Kiran Patil", "Tara Patil", "Dev Patil", "Ria Patil"]
+def test_more_than_three_kids_is_rejected(client, mailbox, make_event):
+    kids = ["Meera Patil", "Kiran Patil", "Tara Patil", "Dev Patil"]
 
     response = post(client, make_event(), with_family(kids=kids))
 
     assert response.status_code == 422
-    assert "at most 4 kids" in response.text
+    assert "at most 3 kids" in response.text
     assert mailbox.sent == []
 
 
@@ -286,7 +291,7 @@ def test_kid_names_without_kids_selected_are_rejected(client, mailbox, make_even
     response = post(client, make_event(), data)
 
     assert response.status_code == 422
-    assert "kid_names must not be sent" in response.text
+    assert "kid_names and kid_ages must not be sent" in response.text
 
 
 @pytest.mark.parametrize("name", ["R", "x" * 101, "Meera\nPatil", "   "])
@@ -372,3 +377,78 @@ def test_admin_list_shows_attendance_family_and_food(client, mailbox, make_event
         "FAST_FOOD",
     )
     assert [row["employee_id"] for row in declined_rows] == ["MT-1"]
+
+
+# --- kids' ages -------------------------------------------------------------------
+
+
+def test_each_kid_is_stored_with_their_age(client, mailbox, make_event, db_session):
+    started = post(
+        client, make_event(), with_family(adult="Ravi Patil", kids=["Meera Patil", "Dev Patil"], ages=[0, 17])
+    )
+    guest_pass = verify(client, started.json()["registration_id"], mailbox.last_code).json()
+
+    assert (guest_pass["kid_names"], guest_pass["kid_ages"]) == (["Meera Patil", "Dev Patil"], [0, 17])
+    rows = db_session.scalars(select(RegistrationGuest).order_by(RegistrationGuest.position)).all()
+    assert [(row.guest_type, row.age) for row in rows] == [("ADULT", None), ("KID", 0), ("KID", 17)]
+
+
+@pytest.mark.parametrize(
+    "ages",
+    [
+        [],  # no age at all
+        [7],  # one age for two kids
+        [7, 9, 11],  # more ages than kids
+        [7, None],
+        [7, -1],
+        [7, 18],
+        [7, "9"],
+        [7, 9.5],
+        [7, True],
+    ],
+)
+def test_every_kid_needs_a_whole_number_age_from_0_to_17(client, mailbox, make_event, ages):
+    response = post(client, make_event(), with_family(kids=["Meera Patil", "Dev Patil"], ages=ages))
+
+    assert response.status_code == 422
+    assert mailbox.sent == []
+
+
+@pytest.mark.parametrize(
+    "stray",
+    [
+        {"attending": False, "kid_ages": [7]},
+        {"attending": True, "family_attending": False, "food_preference": "VEG", "kid_ages": [7]},
+    ],
+)
+def test_kid_ages_are_rejected_when_no_kids_can_come(client, mailbox, make_event, stray):
+    assert post(client, make_event(), body(**stray)).status_code == 422
+
+
+def test_kid_ages_without_kids_selected_are_rejected(client, mailbox, make_event):
+    data = {**with_family(adult="Ravi Patil"), "kid_ages": [7]}
+
+    response = post(client, make_event(), data)
+
+    assert response.status_code == 422
+    assert "must not be sent unless Kids" in response.text
+
+
+def test_changing_a_kid_age_on_resubmission_updates_it(client, mailbox, make_event, otp_limits, db_session):
+    otp_limits(otp_resend_cooldown_seconds=0)
+    event = make_event()
+    post(client, event, with_family(kids=["Meera Patil"], ages=[6]))
+
+    post(client, event, with_family(kids=["Meera Patil"], ages=[7]))
+
+    assert db_session.scalars(select(RegistrationGuest)).one().age == 7
+
+
+def test_admin_list_shows_kid_ages(client, mailbox, make_event, login_as):
+    event = make_event()
+    post(client, event, with_family(kids=["Meera Patil", "Dev Patil"], ages=[4, 12]))
+    login_as("admin")
+
+    item = client.get(f"/api/v1/events/{event.id}/registrations").json()["items"][0]
+
+    assert (item["kid_names"], item["kid_ages"]) == (["Meera Patil", "Dev Patil"], [4, 12])

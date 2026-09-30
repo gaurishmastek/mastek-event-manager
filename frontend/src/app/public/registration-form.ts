@@ -20,6 +20,10 @@ export const FOOD_PREFERENCES: readonly { value: FoodPreference; label: string }
   { value: 'FAST_FOOD', label: 'Fast Food' },
 ];
 
+/** Kids' ages are whole years in this range. Mirrors `MIN_KID_AGE`/`MAX_KID_AGE` in `backend/app/modules/guests/models.py`. */
+export const MIN_KID_AGE = 0;
+export const MAX_KID_AGE = 17;
+
 /** An attending employee may bring one adult family member and up to this many kids. */
 export const MAX_KIDS = 3;
 
@@ -42,6 +46,8 @@ export interface RegistrationFormValue {
   withKids: boolean;
   adultName: string;
   kidNames: string[];
+  /** Each kid's age as typed, at the same index as their name. */
+  kidAges: string[];
   foodPreference: FoodPreference | null;
   consent: boolean;
 }
@@ -60,16 +66,20 @@ export function clearInapplicable(form: RegistrationFormValue): RegistrationForm
       withKids: false,
       adultName: '',
       kidNames: [],
+      kidAges: [],
       foodPreference: null,
     };
   }
   if (form.familyAttending !== true) {
-    return { ...form, withAdult: false, withKids: false, adultName: '', kidNames: [] };
+    return { ...form, withAdult: false, withKids: false, adultName: '', kidNames: [], kidAges: [] };
   }
+  const kidNames = form.withKids ? form.kidNames.slice(0, MAX_KIDS) : [];
   return {
     ...form,
     adultName: form.withAdult ? form.adultName : '',
-    kidNames: form.withKids ? form.kidNames.slice(0, MAX_KIDS) : [],
+    kidNames,
+    // One age per kid name, always at the same index.
+    kidAges: kidNames.map((_, index) => form.kidAges[index] ?? ''),
   };
 }
 
@@ -123,6 +133,16 @@ export function familyMembersError(form: RegistrationFormValue): string | null {
   return form.withAdult || form.withKids ? null : 'Select Adult, Kids or both.';
 }
 
+/** A kid's age as typed: a whole number of years from 0 to 17. */
+export function kidAgeError(value: string): string | null {
+  const age = value.trim();
+  if (!age) return 'Enter an age.';
+  if (!/^\d{1,2}$/.test(age) || Number(age) < MIN_KID_AGE || Number(age) > MAX_KID_AGE) {
+    return `Enter an age from ${MIN_KID_AGE} to ${MAX_KID_AGE}.`;
+  }
+  return null;
+}
+
 export function kidsError(form: RegistrationFormValue): string | null {
   if (form.attending !== true || form.familyAttending !== true || !form.withKids) return null;
   if (form.kidNames.length === 0) return "Add at least one kid's name.";
@@ -172,6 +192,7 @@ export function isFormValid(form: RegistrationFormValue, maxGuests: number, seat
     !(applicable.withAdult && personNameError(applicable.adultName)) &&
     !kidsError(applicable) &&
     applicable.kidNames.every((name) => !personNameError(name)) &&
+    applicable.kidAges.every((age) => !kidAgeError(age)) &&
     !foodPreferenceError(applicable) &&
     !partyError(applicable, maxGuests, seatsLeft)
   );
@@ -201,6 +222,7 @@ export function toRegistrationPayload(form: RegistrationFormValue): Registration
     payload.adult_name = applicable.withAdult ? applicable.adultName.trim() : null;
     payload.accompanying_kids = applicable.withKids;
     payload.kid_names = applicable.kidNames.map((name) => name.trim());
+    payload.kid_ages = applicable.kidAges.map((age) => Number(age.trim()));
   }
   return payload;
 }

@@ -112,6 +112,7 @@ def family_fields(guests: list[str] | None = None) -> dict:
         "adult_name": adult,
         "accompanying_kids": bool(kids),
         "kid_names": kids,
+        "kid_ages": [8] * len(kids),
     }
 
 

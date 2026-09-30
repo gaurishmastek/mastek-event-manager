@@ -262,27 +262,51 @@
 
                   @if (answers().withKids) {
                     <fieldset class="space-y-3" aria-describedby="kids-help kids-error">
-                      <legend class="mb-1 text-sm font-medium">Kids' names</legend>
+                      <legend class="mb-1 text-sm font-medium">Kids' names and ages</legend>
                       <p id="kids-help" class="text-xs text-muted-foreground">
                         {{ answers().kidNames.length }} of {{ maxKids }} kids added.
                       </p>
                       @for (name of answers().kidNames; track $index; let i = $index) {
                         <div>
-                          <label [for]="'kid-name-' + i" class="mb-1 block text-xs text-muted-foreground">Kid {{ i + 1 }}</label>
-                          <div class="flex gap-2">
-                            <input
-                              [id]="'kid-name-' + i"
-                              [name]="'kidName' + i"
-                              autocomplete="off"
-                              maxlength="100"
-                              required
-                              [ngModel]="name"
-                              (ngModelChange)="setKidName(i, $event)"
-                              (blur)="markTouched('kidName' + i)"
-                              [attr.aria-invalid]="show('kidName' + i) && !!personNameError(name, 'name for this kid')"
-                              [attr.aria-describedby]="'kid-name-' + i + '-error'"
-                              class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            />
+                          <div class="flex items-end gap-2">
+                            <div class="min-w-0 flex-1">
+                              <label [for]="'kid-name-' + i" class="mb-1 block text-xs text-muted-foreground">Kid {{ i + 1 }} name</label>
+                              <input
+                                [id]="'kid-name-' + i"
+                                [name]="'kidName' + i"
+                                autocomplete="off"
+                                maxlength="100"
+                                required
+                                [ngModel]="name"
+                                (ngModelChange)="setKidName(i, $event)"
+                                (blur)="markTouched('kidName' + i)"
+                                [attr.aria-invalid]="show('kidName' + i) && !!personNameError(name, 'name for this kid')"
+                                [attr.aria-describedby]="'kid-name-' + i + '-error'"
+                                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              />
+                            </div>
+                            <div class="w-20 shrink-0">
+                              <label [for]="'kid-age-' + i" class="mb-1 block text-xs text-muted-foreground"
+                                ><span class="sr-only">Kid {{ i + 1 }} </span>Age</label
+                              >
+                              <input
+                                [id]="'kid-age-' + i"
+                                [name]="'kidAge' + i"
+                                type="number"
+                                inputmode="numeric"
+                                autocomplete="off"
+                                [min]="minKidAge"
+                                [max]="maxKidAge"
+                                step="1"
+                                required
+                                [ngModel]="answers().kidAges[i]"
+                                (ngModelChange)="setKidAge(i, $event)"
+                                (blur)="markTouched('kidAge' + i)"
+                                [attr.aria-invalid]="show('kidAge' + i) && !!kidAgeError(answers().kidAges[i])"
+                                [attr.aria-describedby]="'kid-age-' + i + '-error'"
+                                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              />
+                            </div>
                             @if (answers().kidNames.length > 1) {
                               <button
                                 type="button"
@@ -297,6 +321,9 @@
                           </div>
                           @if (show('kidName' + i) && personNameError(name, 'name for this kid'); as error) {
                             <p [id]="'kid-name-' + i + '-error'" class="mt-1 text-xs text-destructive">{{ error }}</p>
+                          }
+                          @if (show('kidAge' + i) && kidAgeError(answers().kidAges[i]); as error) {
+                            <p [id]="'kid-age-' + i + '-error'" class="mt-1 text-xs text-destructive">{{ error }}</p>
                           }
                         </div>
                       }
@@ -456,8 +483,8 @@
                   @if (p.adult_name) {
                     <li>{{ p.adult_name }} (adult)</li>
                   }
-                  @for (name of p.kid_names; track $index) {
-                    <li>{{ name }} (kid)</li>
+                  @for (name of p.kid_names; track $index; let i = $index) {
+                    <li>{{ name }} (kid{{ p.kid_ages[i] !== null && p.kid_ages[i] !== undefined ? ', age ' + p.kid_ages[i] : '' }})</li>
                   }
                 } @else {
                   @for (name of p.guest_names; track $index) {

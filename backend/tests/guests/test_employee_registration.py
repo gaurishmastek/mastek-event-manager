@@ -52,9 +52,7 @@ def test_mobile_is_normalized_hashed_encrypted_and_masked(client, mailbox, regis
 
 
 @pytest.mark.parametrize("mobile", ["omitted", None, "", "   "])
-def test_mobile_is_optional_and_email_verification_still_works(
-    client, mailbox, make_event, db_session, mobile
-):
+def test_mobile_is_optional_and_email_verification_still_works(client, mailbox, make_event, db_session, mobile):
     event = make_event()
     body = registration_body()
     if mobile == "omitted":
