@@ -51,6 +51,38 @@ def test_mobile_is_normalized_hashed_encrypted_and_masked(client, mailbox, regis
     assert len(row.mobile_hash) == 64
 
 
+@pytest.mark.parametrize("mobile", ["omitted", None, "", "   "])
+def test_mobile_is_optional_and_email_verification_still_works(
+    client, mailbox, make_event, db_session, mobile
+):
+    event = make_event()
+    body = registration_body()
+    if mobile == "omitted":
+        del body["mobile"]
+    else:
+        body["mobile"] = mobile
+
+    started = client.post(f"{BASE}/events/{event.public_id}/registrations", json=body)
+
+    assert started.status_code == 202, started.text
+    row = db_session.scalars(select(Registration)).one()
+    assert (row.mobile_hash, row.mobile_encrypted, row.mobile_masked) == (None, None, None)
+    assert mailbox.sent[0][0] == body["email"]
+    assert verify(client, started.json()["registration_id"], mailbox.last_code).status_code == 200
+
+
+def test_pending_resubmission_can_clear_mobile(register, mailbox, make_event, otp_limits, db_session):
+    otp_limits(otp_resend_cooldown_seconds=0)
+    event = make_event()
+    first = register(event.id)
+    second = register(event.id, mobile="")
+
+    assert second.status_code == 202, second.text
+    assert second.json()["registration_id"] == first.json()["registration_id"]
+    row = db_session.scalars(select(Registration)).one()
+    assert (row.mobile_hash, row.mobile_encrypted, row.mobile_masked) == (None, None, None)
+
+
 def test_pass_details_are_opaque(client, issue_pass, make_event):
     guest_pass = issue_pass(make_event().id, guests=["Ravi Patil"])
 
@@ -75,13 +107,13 @@ def test_accepts_employee_ids_with_safe_characters(register, mailbox, make_event
     assert register(make_event().id, employee_id=employee_id).status_code == 202
 
 
-@pytest.mark.parametrize("mobile", ["12345", "5876543210", "+1 415 555 0100", "98765432101", "98765abcde", ""])
+@pytest.mark.parametrize("mobile", ["12345", "5876543210", "+1 415 555 0100", "98765432101", "98765abcde"])
 def test_rejects_non_indian_or_malformed_mobiles(register, mailbox, make_event, mobile):
     assert register(make_event().id, mobile=mobile).status_code == 422
     assert mailbox.sent == []
 
 
-@pytest.mark.parametrize("field", ["employee_id", "employee_name", "email", "mobile", "attending", "consent"])
+@pytest.mark.parametrize("field", ["employee_id", "employee_name", "email", "attending", "consent"])
 def test_required_fields(client, mailbox, make_event, field):
     body = registration_body()
     del body[field]

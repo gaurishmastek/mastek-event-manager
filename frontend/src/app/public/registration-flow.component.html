@@ -32,7 +32,7 @@
 
           <form class="space-y-4" novalidate (ngSubmit)="submitRegistration()">
             <div>
-              <label for="employee-id" class="mb-1 block text-sm font-medium">Employee ID</label>
+              <label for="employee-id" class="mb-1 block text-sm font-medium">Employee ID *</label>
               <input
                 id="employee-id"
                 name="employeeId"
@@ -52,7 +52,7 @@
             </div>
 
             <div>
-              <label for="employee-name" class="mb-1 block text-sm font-medium">Your name</label>
+              <label for="employee-name" class="mb-1 block text-sm font-medium">Your name * </label>
               <input
                 id="employee-name"
                 name="employeeName"
@@ -72,7 +72,7 @@
             </div>
 
             <div>
-              <label for="email" class="mb-1 block text-sm font-medium">Email address</label>
+              <label for="email" class="mb-1 block text-sm font-medium">Email address *</label>
               <input
                 id="email"
                 name="email"
@@ -94,7 +94,7 @@
             </div>
 
             <div>
-              <label for="mobile" class="mb-1 block text-sm font-medium">Mobile number</label>
+              <label for="mobile" class="mb-1 block text-sm font-medium">Mobile number (optional)</label>
               <input
                 id="mobile"
                 name="mobile"
@@ -387,7 +387,7 @@
         <div class="space-y-4 p-6">
           <div>
             <h1 class="text-lg font-semibold">Enter the code</h1>
-            <p class="text-sm text-muted-foreground">Sent to {{ otpSent()?.email }}. Check your spam folder if it hasn't arrived.</p>
+            <p class="text-md text-muted-foreground">Sent to {{ otpSent()?.email }}. Check your spam folder if it hasn't arrived.</p>
           </div>
 
           <form class="space-y-4" (ngSubmit)="submitOtp()">
@@ -401,9 +401,9 @@
             />
 
             @if (errorMessage()) {
-              <p class="text-sm text-destructive">{{ errorMessage() }}</p>
+              <p class="text-md text-destructive">{{ errorMessage() }}</p>
             }
-
+            <br>
             <app-button type="submit" [loading]="submitting()" [disabled]="otpCode().trim().length !== 6" class="block w-full">
               Verify
             </app-button>
@@ -426,10 +426,10 @@
         <app-card>
           <div class="space-y-2 p-6 text-center" role="status">
             <h1 class="text-lg font-semibold">Thank you, {{ d.employee_name }}</h1>
-            <p class="text-sm text-muted-foreground">
+            <p class="text-md text-muted-foreground">
               We've recorded that you won't be attending {{ d.event.title }}. No entry pass is issued.
             </p>
-            <p class="text-xs text-muted-foreground">
+            <p class="text-sm text-muted-foreground">
               Changed your mind? Register again from the same link with the same employee ID and email.
             </p>
           </div>
@@ -446,7 +446,7 @@
             <div class="flex justify-center">
               <img [src]="p.qr_svg" alt="QR entry pass" class="h-56 w-56" />
             </div>
-            <div class="rounded-md bg-secondary/50 p-3 text-left text-sm">
+            <div class="rounded-md bg-secondary/50 p-3 text-left text-md">
               <p class="font-medium">
                 This pass admits {{ p.party_size }} {{ p.party_size === 1 ? 'person' : 'people' }} once
               </p>
@@ -469,10 +469,10 @@
                 <p class="mt-2 text-muted-foreground">Food preference: {{ foodLabel(p.food_preference) }}</p>
               }
             </div>
-            <p class="text-xs text-muted-foreground">
-              Arrive together and show this QR code at the gate. It can be scanned only once, for your whole party.
-              Download or print it now: for your security we can't show it again, but you can get a new one by
-              registering again with the same employee ID and email, which cancels this one.
+            <p class="text-md text-muted-foreground">
+              Arrive together and show this QR code at the gate.
+              It can be scanned only once, for your whole party.<br>
+              <strong>Please Download it or print it or Screenshot it now: for your security we can't show it again.</strong>
             </p>
             <div class="flex justify-center gap-3 print:hidden">
               <a

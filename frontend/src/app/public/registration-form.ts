@@ -21,7 +21,7 @@ export const FOOD_PREFERENCES: readonly { value: FoodPreference; label: string }
 ];
 
 /** An attending employee may bring one adult family member and up to this many kids. */
-export const MAX_KIDS = 4;
+export const MAX_KIDS = 3;
 
 /**
  * Whether an employee attending alone must still choose a food preference. Attendees who bring family always must.
@@ -106,8 +106,10 @@ export function emailError(value: string): string | null {
 
 export function mobileError(value: string): string | null {
   const mobile = value.replace(MOBILE_SEPARATORS, '');
-  if (!mobile) return 'Enter your mobile number.';
-  if (!INDIAN_MOBILE.test(mobile)) return 'Enter a valid Indian mobile number, e.g. 98765 43210.';
+  // if (!mobile) return 'Enter your mobile number.';
+  if (mobile) {
+    if (!INDIAN_MOBILE.test(mobile)) return 'Enter a valid Indian mobile number, e.g. 98765 43210.';
+  }
   return null;
 }
 

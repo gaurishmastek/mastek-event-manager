@@ -99,7 +99,7 @@ have no employee id and no guests; those from before the SMS→email switch have
 | `email_hash` | varchar(64) | not null — HMAC-SHA256, for lookup/uniqueness |
 | `email_encrypted` | varchar(512) | not null — Fernet ciphertext |
 | `email_masked` | varchar(260) | not null — display only, e.g. `as•••@example.com` |
-| `mobile_hash` | varchar(64) | nullable — HMAC of the `+91` mobile. Set on every new registration |
+| `mobile_hash` | varchar(64) | nullable — HMAC of the `+91` mobile when provided |
 | `mobile_encrypted` | varchar(255) | nullable — Fernet ciphertext of the mobile. Never used to send messages |
 | `mobile_masked` | varchar(20) | nullable — display copy, e.g. `98•••••210` |
 | `status` | varchar(20) | `PENDING_OTP` \| `VERIFIED` \| `CHECKED_IN` \| `DECLINED` (verified, not attending: no seat, no pass), default `PENDING_OTP` |
