@@ -93,28 +93,7 @@
               }
             </div>
 
-            <div>
-              <label for="mobile" class="mb-1 block text-sm font-medium">Mobile number (optional)</label>
-              <input
-                id="mobile"
-                name="mobile"
-                type="tel"
-                inputmode="tel"
-                autocomplete="tel-national"
-                maxlength="20"
-                required
-                placeholder="98765 43210"
-                [ngModel]="mobile()"
-                (ngModelChange)="mobile.set($event)"
-                (blur)="markTouched('mobile')"
-                [attr.aria-invalid]="show('mobile') && !!mobileError(mobile())"
-                aria-describedby="mobile-error"
-                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-              @if (show('mobile') && mobileError(mobile()); as error) {
-                <p id="mobile-error" class="mt-1 text-xs text-destructive">{{ error }}</p>
-              }
-            </div>
+            <!-- The mobile number field is hidden: the form sends a blank mobile, which the API stores as none. -->
 
             <fieldset
               id="attending-group"
@@ -443,6 +422,11 @@
             >
               Resend code
             </button>
+
+            <p id="otp-support" class="text-center text-sm text-muted-foreground">
+              Didn't receive the verification code? Contact Pearl Kinny at
+              <a href="mailto:pearl.kinny@mastek.com" class="font-medium underline">pearl.kinny&#64;mastek.com</a>.
+            </p>
           </form>
         </div>
       </app-card>
@@ -500,6 +484,9 @@
               Arrive together and show this QR code at the gate.
               It can be scanned only once, for your whole party.<br>
               <strong>Please Download it or print it or Screenshot it now: for your security we can't show it again.</strong>
+            </p>
+            <p id="pass-emailed" class="text-sm text-muted-foreground">
+              We're also emailing this QR pass to your registered email address. Check your spam folder if it hasn't arrived.
             </p>
             <div class="flex justify-center gap-3 print:hidden">
               <a

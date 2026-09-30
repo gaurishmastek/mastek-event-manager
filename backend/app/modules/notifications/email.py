@@ -9,12 +9,15 @@ code (or HTTP status) and a redacted provider reply, so an operator can tell a D
 refused sender without the log ever holding a credential, the message body or a full address.
 """
 
+import base64
 import logging
 import re
 import smtplib
 import socket
 import ssl
 import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import parseaddr
 from typing import Protocol
@@ -51,12 +54,21 @@ class EmailDeliveryError(Exception):
         self.smtp_code = smtp_code
 
 
+@dataclass(frozen=True)
+class EmailAttachment:
+    """A file sent with a message, e.g. the QR entry pass as a PNG image."""
+
+    filename: str
+    content: bytes
+    mime_type: str  # "maintype/subtype", e.g. "image/png"
+
+
 class EmailSender(Protocol):
-    def send(self, to: str, subject: str, body: str) -> None: ...
+    def send(self, to: str, subject: str, body: str, attachments: Sequence[EmailAttachment] = ()) -> None: ...
 
 
 class DisabledEmailSender:
-    def send(self, to: str, subject: str, body: str) -> None:
+    def send(self, to: str, subject: str, body: str, attachments: Sequence[EmailAttachment] = ()) -> None:
         logger.warning("Email not sent: EMAIL_PROVIDER is disabled (check backend/.env or the environment)")
         raise EmailDeliveryError("Email delivery is not configured", kind=NOT_CONFIGURED)
 
@@ -64,8 +76,9 @@ class DisabledEmailSender:
 class ConsoleEmailSender:
     """Development only: prints the message instead of sending it. Refused in production by config."""
 
-    def send(self, to: str, subject: str, body: str) -> None:
-        print(f"[dev email] To: {mask_email(to)} | {subject}\n{body}", file=sys.stdout, flush=True)
+    def send(self, to: str, subject: str, body: str, attachments: Sequence[EmailAttachment] = ()) -> None:
+        files = "".join(f"\n[attachment] {a.filename} ({a.mime_type}, {len(a.content)} bytes)" for a in attachments)
+        print(f"[dev email] To: {mask_email(to)} | {subject}\n{body}{files}", file=sys.stdout, flush=True)
 
 
 def redact_smtp_reply(reply: bytes | str | None, limit: int = 160) -> str:
@@ -124,13 +137,16 @@ class SmtpEmailSender:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    def send(self, to: str, subject: str, body: str) -> None:
+    def send(self, to: str, subject: str, body: str, attachments: Sequence[EmailAttachment] = ()) -> None:
         s = self.settings
         message = EmailMessage()
         message["From"] = s.email_from
         message["To"] = to
         message["Subject"] = subject
         message.set_content(body)
+        for attachment in attachments:
+            maintype, subtype = attachment.mime_type.split("/", 1)
+            message.add_attachment(attachment.content, maintype=maintype, subtype=subtype, filename=attachment.filename)
         context = ssl.create_default_context()
         stage = "connect"
         try:
@@ -206,7 +222,7 @@ class MailtrapEmailSender:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    def send(self, to: str, subject: str, body: str) -> None:
+    def send(self, to: str, subject: str, body: str, attachments: Sequence[EmailAttachment] = ()) -> None:
         # Imported here so the SDK only loads when this provider is chosen.
         import mailtrap as mt
 
@@ -218,6 +234,16 @@ class MailtrapEmailSender:
             subject=subject,
             text=body,
             category=s.mailtrap_category or None,
+            attachments=[
+                mt.Attachment(
+                    content=base64.b64encode(a.content),
+                    filename=a.filename,
+                    mimetype=a.mime_type,
+                    disposition=mt.Disposition.ATTACHMENT,
+                )
+                for a in attachments
+            ]
+            or None,
         )
         try:
             mt.MailtrapClient(token=s.mailtrap_api_token).send(mail)

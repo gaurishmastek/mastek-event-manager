@@ -83,6 +83,7 @@ export class RegistrationFlowComponent {
   readonly employeeId = signal('');
   readonly employeeName = signal('');
   readonly email = signal('');
+  // The mobile field is hidden on the form, so this stays blank and the request sends `mobile: ''`.
   readonly mobile = signal('');
   /** Attendance, family and food answers. Always kept with inapplicable answers cleared (`clearInapplicable`). */
   readonly answers = signal<Pick<RegistrationFormValue, keyof typeof EMPTY_ANSWERS>>(EMPTY_ANSWERS);

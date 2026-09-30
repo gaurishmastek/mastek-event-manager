@@ -8,20 +8,25 @@ from app.core.config import settings
 from app.db.mixins import utcnow
 from app.main import app
 from app.modules.events.models import Event
-from app.modules.notifications.email import EmailDeliveryError, get_email_sender
+from app.modules.notifications.email import EmailAttachment, EmailDeliveryError, get_email_sender
 
 
 class FakeMailbox:
-    """Captures emails instead of sending them. `sent` holds (address, OTP code) pairs."""
+    """Captures emails instead of sending them. `sent` holds (address, OTP code) pairs; `passes` holds the QR pass
+    emails as (address, subject, body, attachments)."""
 
     def __init__(self) -> None:
         self.messages: list[tuple[str, str, str]] = []
+        self.passes: list[tuple[str, str, str, list[EmailAttachment]]] = []
         self.fail = False
 
-    def send(self, to: str, subject: str, body: str) -> None:
+    def send(self, to: str, subject: str, body: str, attachments=()) -> None:
         if self.fail:
             raise EmailDeliveryError("provider down")
-        self.messages.append((to, subject, body))
+        if attachments:
+            self.passes.append((to, subject, body, list(attachments)))
+        else:
+            self.messages.append((to, subject, body))
 
     @property
     def sent(self) -> list[tuple[str, str]]:

@@ -52,7 +52,6 @@ describe('RegistrationFlowComponent', () => {
     await type('#employee-id', 'MT-104');
     await type('#employee-name', 'Asha Patil');
     await type('#email', 'asha@example.com');
-    await type('#mobile', '98765 43210');
   }
 
   const submit = () => el<HTMLButtonElement>('button[type="submit"]');
@@ -96,11 +95,12 @@ describe('RegistrationFlowComponent', () => {
     expect(el('#food-group')).toBeNull();
   });
 
-  it('places the attendance question right after the mobile field', () => {
-    const fields = Array.from(fixture.nativeElement.querySelectorAll('#mobile, #attending-group, #consent')).map(
+  it('hides the mobile field and places the attendance question right after the email field', () => {
+    expect(el('#mobile')).toBeNull();
+    const fields = Array.from(fixture.nativeElement.querySelectorAll('#email, #attending-group, #consent')).map(
       (node) => (node as HTMLElement).id,
     );
-    expect(fields).toEqual(['mobile', 'attending-group', 'consent']);
+    expect(fields).toEqual(['email', 'attending-group', 'consent']);
   });
 
   it('shows the family and food questions only when attending, and clears them when switching to No', async () => {
@@ -220,7 +220,7 @@ describe('RegistrationFlowComponent', () => {
       employee_id: 'MT-104',
       employee_name: 'Asha Patil',
       email: 'asha@example.com',
-      mobile: '98765 43210',
+      mobile: '',
       attending: false,
       consent: true,
     });
@@ -231,6 +231,11 @@ describe('RegistrationFlowComponent', () => {
       resend_available_at: '2030-10-01T10:01:00',
     });
     await settle();
+
+    const support = el('#otp-support');
+    expect(support.textContent).toContain("Didn't receive the verification code? Contact Pearl Kinny");
+    expect(support.querySelector('a')!.getAttribute('href')).toBe('mailto:pearl.kinny@mastek.com');
+    expect(support.textContent).toContain('pearl.kinny@mastek.com');
 
     await type('app-input input', '123456');
     submit().click();
@@ -279,7 +284,7 @@ describe('RegistrationFlowComponent', () => {
       employee_id: 'MT-104',
       employee_name: 'Asha Patil',
       email: 'asha@example.com',
-      mobile: '98765 43210',
+      mobile: '',
       attending: true,
       family_attending: true,
       accompanying_adult: true,
@@ -310,5 +315,48 @@ describe('RegistrationFlowComponent', () => {
     await click('#add-kid');
 
     expect(el('#party-error').textContent).toContain('at most 3 guests');
+  });
+
+  it('tells an attending employee that the QR pass is also on its way to their email', async () => {
+    await fillDetails();
+    await click('#attending-yes');
+    await click('#family-no');
+    await click('#food-VEG');
+    await click('#consent');
+    submit().click();
+    fixture.detectChanges();
+    http.expectOne(registrationsUrl()).flush({
+      registration_id: '11111111-1111-4111-8111-111111111111',
+      email: 'as•••@example.com',
+      otp_expires_at: '2030-10-01T10:05:00',
+      resend_available_at: '2030-10-01T10:01:00',
+    });
+    await settle();
+
+    await type('app-input input', '123456');
+    submit().click();
+    http
+      .expectOne(`${environment.apiBaseUrl}/public/registrations/11111111-1111-4111-8111-111111111111/verify`)
+      .flush({
+        registration_id: '11111111-1111-4111-8111-111111111111',
+        status: 'VERIFIED',
+        attending: true,
+        employee_id: 'MT-104',
+        employee_name: 'Asha Patil',
+        guest_names: [],
+        adult_name: null,
+        kid_names: [],
+        kid_ages: [],
+        food_preference: 'VEG',
+        party_size: 1,
+        event: EVENT,
+        qr_token: 'token',
+        qr_svg: 'data:image/svg+xml;base64,PHN2Zy8+',
+        issued_at: '2030-10-01T10:02:00',
+      });
+    await settle();
+
+    expect(el('img').getAttribute('alt')).toBe('QR entry pass');
+    expect(el('#pass-emailed').textContent).toContain('emailing this QR pass to your registered email address');
   });
 });
