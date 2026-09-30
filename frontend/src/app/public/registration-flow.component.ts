@@ -18,7 +18,10 @@ import {
   FOOD_PREFERENCES,
   foodPreferenceError,
   isFormValid,
+  kidAgeError,
   kidsError,
+  MAX_KID_AGE,
+  MIN_KID_AGE,
   MAX_KIDS,
   mobileError,
   partyError,
@@ -38,6 +41,7 @@ const EMPTY_ANSWERS = {
   withKids: false,
   adultName: '',
   kidNames: [],
+  kidAges: [],
   foodPreference: null,
 } satisfies Partial<RegistrationFormValue>;
 
@@ -66,6 +70,9 @@ export class RegistrationFlowComponent {
   readonly yesNoError = yesNoError;
   readonly foodPreferences = FOOD_PREFERENCES;
   readonly maxKids = MAX_KIDS;
+  readonly minKidAge = MIN_KID_AGE;
+  readonly maxKidAge = MAX_KID_AGE;
+  readonly kidAgeError = kidAgeError;
   readonly ist = IST;
 
   readonly step = signal<Step>('loading');
@@ -139,6 +146,7 @@ export class RegistrationFlowComponent {
       withKids: next.withKids,
       adultName: next.adultName,
       kidNames: next.kidNames,
+      kidAges: next.kidAges,
       foodPreference: next.foodPreference,
     });
   }
@@ -155,9 +163,9 @@ export class RegistrationFlowComponent {
     this.updateAnswers({ withAdult });
   }
 
-  /** Ticking Kids starts with one name field, since at least one kid is required. */
+  /** Ticking Kids starts with one name and age row, since at least one kid is required. */
   setWithKids(withKids: boolean): void {
-    this.updateAnswers({ withKids, kidNames: withKids ? [''] : [] });
+    this.updateAnswers({ withKids, kidNames: withKids ? [''] : [], kidAges: withKids ? [''] : [] });
   }
 
   setAdultName(adultName: string): void {
@@ -172,19 +180,25 @@ export class RegistrationFlowComponent {
     this.updateAnswers({ kidNames: this.answers().kidNames.map((current, i) => (i === index ? name : current)) });
   }
 
+  setKidAge(index: number, age: string | number | null): void {
+    const value = age === null ? '' : String(age);
+    this.updateAnswers({ kidAges: this.answers().kidAges.map((current, i) => (i === index ? value : current)) });
+  }
+
   addKid(): void {
-    const kidNames = this.answers().kidNames;
+    const { kidNames, kidAges } = this.answers();
     if (kidNames.length >= MAX_KIDS) return;
-    this.updateAnswers({ kidNames: [...kidNames, ''] });
+    this.updateAnswers({ kidNames: [...kidNames, ''], kidAges: [...kidAges, ''] });
     // Move focus to the new field so keyboard and screen-reader users land where they will type.
     setTimeout(() => document.getElementById(`kid-name-${kidNames.length}`)?.focus());
   }
 
   removeKid(index: number): void {
     const kidNames = this.answers().kidNames.filter((_, i) => i !== index);
-    this.updateAnswers({ kidNames });
+    const kidAges = this.answers().kidAges.filter((_, i) => i !== index);
+    this.updateAnswers({ kidNames, kidAges });
     // Field positions shift, so forget which kid fields were touched rather than blame the wrong one.
-    this.touched.update((fields) => new Set([...fields].filter((field) => !field.startsWith('kidName'))));
+    this.touched.update((fields) => new Set([...fields].filter((field) => !field.startsWith('kid'))));
     setTimeout(() => document.getElementById(`kid-name-${Math.min(index, kidNames.length - 1)}`)?.focus());
   }
 

@@ -31,6 +31,11 @@ class GuestType(str, enum.Enum):
     KID = "KID"
 
 
+# Accompanying kids are under 18; each kid's age is given in whole years.
+MIN_KID_AGE = 0
+MAX_KID_AGE = 17
+
+
 def _in_check(column: str, enum_cls: type[enum.Enum]) -> str:
     values = ", ".join(f"'{member.value}'" for member in enum_cls)
     return f"{column} IS NULL OR {column} IN ({values})"
@@ -47,6 +52,9 @@ class RegistrationGuest(AuditMixin, Base):
     __table_args__ = (
         UniqueConstraint("registration_id", "position", name="uq_registration_guests_position"),
         CheckConstraint(_in_check("guest_type", GuestType), name="ck_registration_guests_guest_type"),
+        CheckConstraint(
+            f"age IS NULL OR (age >= {MIN_KID_AGE} AND age <= {MAX_KID_AGE})", name="ck_registration_guests_age"
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -55,6 +63,8 @@ class RegistrationGuest(AuditMixin, Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     # ADULT or KID; null only for guests registered before the family questions.
     guest_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Age in years, set for every kid; null for the adult and for kids registered before ages were asked.
+    age: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Registration(AuditMixin, Base):
@@ -136,3 +146,8 @@ class Registration(AuditMixin, Base):
     @property
     def kid_names(self) -> list[str]:
         return [guest.name for guest in self.guests if guest.guest_type == GuestType.KID.value]
+
+    @property
+    def kid_ages(self) -> list[int | None]:
+        """Ages in the same order as `kid_names`; None for kids registered before ages were asked."""
+        return [guest.age for guest in self.guests if guest.guest_type == GuestType.KID.value]

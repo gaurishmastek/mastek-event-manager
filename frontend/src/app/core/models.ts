@@ -122,6 +122,8 @@ export interface RegistrationCreate {
   accompanying_kids?: boolean;
   /** 1 to 4 names when `accompanying_kids` is true. */
   kid_names?: string[];
+  /** Each kid's age in whole years (0 to 17), in the same order as `kid_names`. */
+  kid_ages?: number[];
   food_preference?: FoodPreference | null;
   consent: true;
 }
@@ -148,6 +150,8 @@ export interface GuestPass {
   guest_names: string[];
   adult_name: string | null;
   kid_names: string[];
+  /** Ages in the same order as `kid_names`; null for kids registered before ages were asked. */
+  kid_ages: (number | null)[];
   food_preference: FoodPreference | null;
   /** The employee plus their guests; the one pass admits all of them once. */
   party_size: number;
@@ -227,6 +231,8 @@ export interface RegistrationAdminRead {
   guest_names: string[];
   adult_name: string | null;
   kid_names: string[];
+  /** Ages in the same order as `kid_names`; null for kids registered before ages were asked. */
+  kid_ages: (number | null)[];
   food_preference: FoodPreference | null;
   number_of_guests: number;
   party_size: number;

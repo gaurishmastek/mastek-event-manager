@@ -36,6 +36,7 @@ def to_admin_read(registration: Registration) -> RegistrationAdminRead:
         guest_names=registration.guest_names,
         adult_name=registration.adult_name,
         kid_names=registration.kid_names,
+        kid_ages=registration.kid_ages,
         food_preference=registration.food_preference,
         number_of_guests=registration.number_of_guests,
         party_size=registration.party_size,

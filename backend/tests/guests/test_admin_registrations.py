@@ -37,6 +37,7 @@ def test_admin_sees_registrations_with_masked_contacts(client, issue_pass, regis
         "guest_names": ["Ravi Patil"],
         "adult_name": "Ravi Patil",
         "kid_names": [],
+        "kid_ages": [],
         "food_preference": "VEG",
         "number_of_guests": 1,
         "party_size": 2,

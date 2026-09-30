@@ -178,6 +178,7 @@ def verify_otp(
         guest_names=registration.guest_names,
         adult_name=registration.adult_name,
         kid_names=registration.kid_names,
+        kid_ages=registration.kid_ages,
         food_preference=registration.food_preference,
         party_size=registration.party_size,
         event=PublicEventRead.model_validate(issued.event),

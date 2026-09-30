@@ -125,6 +125,7 @@ registration's guest list shrinks, the extra rows are soft-deleted, and revived 
 | `name` | varchar(100) | not null |
 | `position` | int | not null — 0-based order (the adult first, then the kids) |
 | `guest_type` | varchar(10) | nullable (`0005`) — `ADULT` \| `KID` (check `ck_registration_guests_guest_type`); null for guests registered before `0005` |
+| `age` | int | nullable (`0006`) — each kid's age in years, 0–17 (check `ck_registration_guests_age`); null for the adult and for kids registered before `0006` |
 
 Unique: `uq_registration_guests_position` on `(registration_id, position)`.
 

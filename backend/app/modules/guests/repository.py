@@ -103,8 +103,8 @@ class RegistrationRepository:
         self.db.flush()
         return registration
 
-    def set_guests(self, registration: Registration, guests: Sequence[tuple[str, GuestType]]) -> None:
-        """Make the registration's active guests exactly `guests` (name and type), in order, without
+    def set_guests(self, registration: Registration, guests: Sequence[tuple[str, GuestType, int | None]]) -> None:
+        """Make the registration's active guests exactly `guests` (name, type and age), in order, without
         hard-deleting rows.
 
         A name at a position that still exists is updated in place, extra positions are soft-deleted,
@@ -117,17 +117,22 @@ class RegistrationRepository:
                 select(RegistrationGuest).where(RegistrationGuest.registration_id == registration.id)
             )
         }
-        for position, (name, guest_type) in enumerate(guests):
+        for position, (name, guest_type, age) in enumerate(guests):
             row = existing.get(position)
             if row is None:
                 self.db.add(
                     RegistrationGuest(
-                        registration_id=registration.id, name=name, position=position, guest_type=guest_type.value
+                        registration_id=registration.id,
+                        name=name,
+                        position=position,
+                        guest_type=guest_type.value,
+                        age=age,
                     )
                 )
             else:
                 row.name = name
                 row.guest_type = guest_type.value
+                row.age = age
                 row.deleted_at = None
                 row.deleted_by = None
                 row.updated_at = now

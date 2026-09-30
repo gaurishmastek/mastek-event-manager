@@ -87,8 +87,8 @@
                       @if (row.adult_name) {
                         <li>{{ row.adult_name }} (adult)</li>
                       }
-                      @for (name of row.kid_names; track $index) {
-                        <li>{{ name }} (kid)</li>
+                      @for (name of row.kid_names; track $index; let i = $index) {
+                        <li>{{ name }} (kid{{ row.kid_ages[i] !== null && row.kid_ages[i] !== undefined ? ', age ' + row.kid_ages[i] : '' }})</li>
                       }
                     </ol>
                   } @else if (row.guest_names.length) {
