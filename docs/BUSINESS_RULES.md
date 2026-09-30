@@ -37,6 +37,7 @@ file calls out where current code differs from that spec.
   - `email`: validated, trimmed, lowercased. OTPs go only here.
   - `mobile`: optional. When provided, it must be a valid Indian mobile number and is normalized to
     `+91XXXXXXXXXX` (`app/core/mobile.py`). Blank, null or omitted values are stored as null. Never messaged.
+    The public form currently hides this field and always sends a blank `mobile`, so new registrations have none.
   - `attending` ("Will you be attending the event on {event date}?"): required `true`/`false` (strict booleans).
     When `false`, every field below except `consent` must be left out (or null/false/empty); sending any of them is
     `422`. A non-attending employee still verifies their email by OTP; the registration then becomes `DECLINED`
@@ -102,6 +103,10 @@ file calls out where current code differs from that spec.
   stored hash — the previous token no longer matches any registration.
 - The QR code encodes only a 256-bit random token (`secrets.token_urlsafe(32)`) — no guest name,
   email or event id. Only its SHA-256 hash is stored (`registrations.qr_token_hash`, unique).
+- Right after the pass is issued (and again on every re-issue), it is emailed to the registration's verified
+  address only, as a PNG attachment (`entry-pass.png`) with the event, time (IST) and party list in the text
+  (`guests/pass_email.py`). The token itself is never written into the email text. A failed send is logged and
+  does not fail the verification, since the pass is already shown on screen. Declined registrations get no email.
 - **Not yet implemented**: a pass-specific validity window (`valid_from`/`valid_until`); gate
   timing is currently computed per-event, not per-pass (see below).
 
