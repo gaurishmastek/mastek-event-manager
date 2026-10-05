@@ -144,3 +144,13 @@ Before committing:
 - ensure generated/build artifacts are ignored where appropriate
 
 Use clear, scoped commit messages.
+
+## Graft token savings
+
+This repo is indexed by Graft (`graft/`, wired into Claude Code via `.claude/` and `.mcp.json`).
+
+At the end of every reply to a user prompt, add one line reporting what Graft saved in that turn, summing the `[graft] tokens saved ≈ N` lines from every Graft call made, for example:
+
+`🌱 graft saved ~12,400 tokens this turn (3 calls)`
+
+Include the dollar figure when the Graft output gives one. If no Graft tool was used or nothing was saved, still add the line: `🌱 graft saved 0 tokens this turn`.
