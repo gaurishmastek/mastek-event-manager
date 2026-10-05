@@ -46,6 +46,7 @@ def test_admin_sees_registrations_with_masked_contacts(client, issue_pass, regis
         "qr_issued": True,
         "qr_issued_at": verified["qr_issued_at"],
         "checked_in_at": None,
+        "people_entered": 0,
         "created_at": verified["created_at"],
     }
     assert verified["verified_at"] and verified["qr_issued_at"]

@@ -116,7 +116,8 @@ file calls out where current code differs from that spec.
 ## QR pass
 
 - One pass per registration (party), issued only on successful OTP verification (`guests/service.py::verify`).
-  It admits the employee and all their registered guests once. Verifying again
+  It admits the employee and each of their registered guests once, not necessarily at the same time: the employee
+  can share the QR so guests who arrive late can enter on it (see "Check-in at the gate"). Verifying again
   later (e.g. a guest who lost their pass) issues a fresh token and immediately replaces the
   stored hash — the previous token no longer matches any registration.
 - The QR code encodes only a 256-bit random token (`secrets.token_urlsafe(32)`) — no guest name,
@@ -127,29 +128,57 @@ file calls out where current code differs from that spec.
   does not fail the verification, since the pass is already shown on screen. Declined registrations get no email.
 - An admin may generate a replacement QR only for a verified party that has not checked in. Generating it replaces the
   stored hash so the old pass stops working. The browser downloads the SVG for the admin to send through an approved
-  email channel; the application does not send email or OTPs from this action.
+  email channel; the application does not send email or OTPs from this action. Once the employee has entered, no
+  replacement can be generated, even if guests are still to arrive on the shared pass.
 - **Not yet implemented**: a pass-specific validity window (`valid_from`/`valid_until`); gate
   timing is currently computed per-event, not per-pass (see below).
 
 ## Check-in at the gate (`app/modules/gate`)
 
-- A scan is accepted only when: the token hash matches an existing registration, that
+- **A scan no longer admits anyone.** It only looks the pass up and shows the officer the party. People come in when
+  the officer approves (`POST /gate/events/{id}/decision`). The officer is checking the employee's ID by eye; the
+  system does not compare it, it records that the officer confirmed it.
+- A scan or decision is accepted only when: the token hash matches an existing registration, that
   registration belongs to the event being scanned, the officer is admin or assigned to that
   event, and the current time is within the event's gate window. `check_ins.registration_id` is
-  unique, so the database is the final guard against double entry even under a race.
+  unique, so the database is the final guard against the employee entering twice even under a race.
+- **First visit** (registration `VERIFIED`, scan result `pending_verification`). The officer compares the employee's
+  ID card with the registered employee id shown on screen, ticks the employee ("ID checked and present") and ticks
+  each accompanying guest who is present. Approving needs the employee ticked (`422` otherwise): guests cannot enter
+  before the employee. Approving sets the registration to `CHECKED_IN` (meaning the employee's ID was checked and the
+  employee is in), writes the `check_ins` row and one `guest_entries` row per ticked guest, all with a server time.
+- **Late guests** (registration `CHECKED_IN` with guests not yet in, scan result `pending_guests`). The pass stays
+  valid until every registered guest has entered. The officer sees who is inside (with times) and who is still to
+  arrive (name, adult/kid, kid's age), ticks the ones present now and approves. There is no second ID check, because
+  the person holding the shared QR is a guest, not the employee. A guest can enter only once (`guest_entries`
+  `registration_guest_id` is unique); naming one who is already in changes nothing and returns
+  `guests_already_entered`. Once nobody remains, a scan returns `already_checked_in`.
+- **Reject**. The officer picks a reason (ID does not match, no ID shown, or Other with a note of 3–255 characters),
+  and the refusal is stored in `entry_rejections` with the officer, gate and time. A rejection changes nothing on the
+  pass, so the guest can return with the right ID and be approved. Rejecting needs a pass awaiting a decision;
+  on a fully used pass nothing is recorded.
+- Because the QR can be shared, the controls are: only registered guests who have not entered can be ticked, the
+  officer sees their names and kids' ages to match them to the people present, and every entry records officer,
+  gate and time. Capacity still counts registered seats; the number inside is informational
+  (`people_entered`, shown on the recent-entries list and in the admin registrations list and export).
+- The employee's ID check cannot be skipped by guests who arrive first. If the employee is late, nobody enters until
+  they arrive.
 - Gate window: opens `gate_opens_minutes_before_start` (default 180 minutes) before
   `starts_at`, and closes at `ends_at`, or `gate_closes_hours_after_start_if_no_end` (default 12
   hours) after `starts_at` when the event has no `ends_at`.
-- Scan outcomes returned to the officer: `admitted`, `already_checked_in`, `wrong_event`,
-  `invalid`, `gate_closed`. For `admitted` and `already_checked_in` only, the response includes the party: employee
-  id and name, guest names, party size, masked email and masked mobile; `already_checked_in` also gives the original
-  check-in time and gate. Other outcomes, and officers not assigned to the event (`404`), get no personal details. The response is always `200 OK`; only `admitted` means entry is
-  allowed. An out-of-scope event yields `404` before a scan outcome is even produced.
-- Every scan attempt (including invalid ones) is logged in `scan_attempts`, without the raw
-  token. A successful scan also writes a `check_ins` row with the officer id, event id, gate, method `QR` and a
-  server-generated `checked_in_at`; the scan request cannot carry a time. Of two concurrent scans of one pass, the
-  atomic `UPDATE ... WHERE status = 'VERIFIED'` lets exactly one win; the other gets `already_checked_in` with the
-  winner's time and gate.
+- Results returned to the officer: `pending_verification`, `pending_guests`, `admitted`, `rejected`,
+  `already_checked_in`, `guests_already_entered`, `wrong_event`, `invalid`, `gate_closed`. For `pending_verification`,
+  `pending_guests`, `admitted`, `already_checked_in` and `guests_already_entered` only, the response includes the
+  party: employee id and name, guest names with their entry state, party size, masked email and masked mobile, and
+  the employee's entry time and gate once they are in. Other outcomes (including `rejected`), and officers not
+  assigned to the event (`404`), get no personal details. The response is always `200 OK` (apart from `422` for a
+  malformed decision); only `admitted` means anyone was let in. An out-of-scope event yields `404` before an
+  outcome is even produced.
+- Every scan and decision (including invalid ones) is logged in `scan_attempts`, without the raw
+  token. An approval writes the `check_ins` row (first visit) with the officer id, event id, gate, method `QR` and a
+  server-generated `checked_in_at`, and `guest_entries` rows for guests; requests cannot carry a time. Of two
+  concurrent first approvals of one pass, the atomic `UPDATE ... WHERE status = 'VERIFIED'` lets exactly one win; the
+  other gets the pass as it now stands (the winner's time and gate).
 - `EventRead.gate_opens_at` / `gate_closes_at` expose this window so the officer's event list can show it; the
   backend still decides every scan.
 
@@ -173,9 +202,18 @@ file calls out where current code differs from that spec.
   never uploaded or stored. Only a string shaped like a pass token (`[A-Za-z0-9_-]{20,128}`) is sent; anything else is
   shown as an invalid pass without a request.
 - One request per pass: frames are ignored while a scan is in flight and while its result is on screen; the officer
-  taps "Scan next guest" to continue, and the same pass is ignored for a further 3 seconds.
-- Party details (employee id and name, guest names, party size, masked email and mobile, check-in time, gate) are
-  shown only for `admitted` and `already_checked_in`.
+  taps "Scan next guest" (or "Cancel" while a decision is pending) to continue, and the same pass is ignored for a
+  further 3 seconds. Cancelling records nothing beyond the scan log.
+- Scanning shows a **Verify guest** panel: the party size, the employee's name and employee id in large type, an
+  "ID checked and present" checkbox for the employee, one checkbox per accompanying guest (name, adult/kid, kid's
+  age; guests already inside are ticked, locked and show their entry time), and a live "Letting in N now · M of P
+  inside" count. **Approve entry** stays disabled until the employee is ticked (first visit) or at least one late
+  guest is ticked (later visit). **Reject entry** opens the reason choices; Other needs a note. A failed or refused
+  decision keeps the panel and the ticks, and says that nobody was checked in. After a successful approval there is no
+  confirmation card: the scanner goes straight back to ready (a short vibration confirms it, the recent-entries list
+  updates, and the same pass is ignored for 3 seconds). Rejections and every other outcome still show their card.
+- Party details (employee id and name, guest names, party size, masked email and mobile, entry times, gate) are
+  shown only for passes awaiting a decision, admitted or already used.
 - **Not yet implemented**: an admin manual check-in fallback for when scanning is unavailable
   (`event-management.md` describes this; there is no `manual-check-in` endpoint on `main` yet).
 

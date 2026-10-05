@@ -2,7 +2,7 @@
 
 from app.db.base import Base
 from app.modules.events.models import Event, OfficerEvent
-from app.modules.gate.models import CheckIn, ScanAttempt
+from app.modules.gate.models import CheckIn, EntryRejection, GuestEntry, ScanAttempt
 from app.modules.guests.models import Registration, RegistrationGuest
 from app.modules.otp.models import OtpChallenge
 from app.modules.users.models import User
@@ -10,7 +10,9 @@ from app.modules.users.models import User
 __all__ = [
     "Base",
     "CheckIn",
+    "EntryRejection",
     "Event",
+    "GuestEntry",
     "OfficerEvent",
     "OtpChallenge",
     "Registration",

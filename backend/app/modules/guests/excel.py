@@ -37,9 +37,10 @@ HEADERS = (
     "QR Issued At (IST)",
     "Checked In At (IST)",
     "Registered At (IST)",
+    "People Entered",
 )
 
-COLUMN_WIDTHS = (38, 18, 24, 28, 20, 12, 18, 36, 24, 36, 16, 18, 18, 12, 18, 24, 12, 24, 24, 24)
+COLUMN_WIDTHS = (38, 18, 24, 28, 20, 12, 18, 36, 24, 36, 16, 18, 18, 12, 18, 24, 12, 24, 24, 24, 14)
 
 
 def _safe_text(value: str | None) -> str:
@@ -91,6 +92,7 @@ def _row(registration: Registration) -> tuple[object, ...]:
         _in_ist(registration.qr_issued_at),
         _in_ist(registration.checked_in_at),
         _in_ist(registration.created_at),
+        registration.people_entered,
     )
 
 

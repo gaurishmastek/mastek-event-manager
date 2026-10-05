@@ -72,6 +72,7 @@ def to_admin_read(registration: Registration) -> RegistrationAdminRead:
         qr_issued=registration.qr_token_hash is not None,
         qr_issued_at=registration.qr_issued_at,
         checked_in_at=registration.checked_in_at,
+        people_entered=registration.people_entered,
         created_at=registration.created_at,
     )
 

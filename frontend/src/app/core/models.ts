@@ -174,9 +174,33 @@ export interface AttendanceDeclined {
 
 // ---- Gate scanning (backend/app/modules/gate) ------------------------------
 
-export type ScanResult = 'admitted' | 'already_checked_in' | 'wrong_event' | 'invalid' | 'gate_closed';
+/**
+ * A scan only looks a pass up (`pending_verification` first visit, `pending_guests` when the employee is already in
+ * and guests are still to arrive). Entry happens when the officer approves (`admitted`); a refusal is `rejected`.
+ */
+export type ScanResult =
+  | 'pending_verification'
+  | 'pending_guests'
+  | 'admitted'
+  | 'rejected'
+  | 'already_checked_in'
+  | 'guests_already_entered'
+  | 'wrong_event'
+  | 'invalid'
+  | 'gate_closed';
 
-/** The registered party behind a pass. Only returned for admitted or already-used passes. */
+/** One accompanying guest on the pass and whether the gate has let them in. */
+export interface PartyMember {
+  id: number;
+  name: string;
+  /** Null for guests registered before the family questions. */
+  type: 'ADULT' | 'KID' | null;
+  age: number | null;
+  entered: boolean;
+  entered_at: string | null;
+}
+
+/** The registered party behind a pass. Only returned for passes awaiting a decision, admitted or already used. */
 export interface ScannedGuest {
   /** The employee's name. */
   name: string;
@@ -187,6 +211,10 @@ export interface ScannedGuest {
   party_size: number;
   email_masked: string | null;
   mobile_masked: string | null;
+  /** True once the employee's ID has been checked and they are in. */
+  employee_entered: boolean;
+  /** Accompanying guests with their entry state; empty on the recent-entries list. */
+  members: PartyMember[];
 }
 
 export interface ScanRequest {
@@ -194,12 +222,31 @@ export interface ScanRequest {
   gate?: string | null;
 }
 
+export type RejectionReason = 'ID_MISMATCH' | 'ID_NOT_PRESENTED' | 'OTHER';
+
+export interface DecisionRequest {
+  token: string;
+  decision: 'approve' | 'reject';
+  gate?: string | null;
+  /** Required on the first approval: the officer compared the employee's ID card with the registered id. */
+  employee_id_checked?: boolean;
+  /** Accompanying guests present now (first visit) or arriving late (later visits). */
+  guest_ids_entered?: number[];
+  reason?: RejectionReason;
+  /** Required when the reason is OTHER. */
+  note?: string | null;
+}
+
 export interface ScanResponse {
   result: ScanResult;
   message: string;
   guest: ScannedGuest | null;
+  /** When the employee entered. */
   checked_in_at: string | null;
+  /** Where the employee entered. */
   gate: string | null;
+  /** Employee plus guests let in so far, when a pass is shown. */
+  people_entered: number | null;
 }
 
 export interface EntryRead {
@@ -207,6 +254,8 @@ export interface EntryRead {
   checked_in_at: string;
   gate: string | null;
   officer_id: number;
+  /** Employee plus the accompanying guests let in so far. */
+  people_entered: number;
 }
 
 export interface EntryPage {
@@ -241,6 +290,8 @@ export interface RegistrationAdminRead {
   qr_issued: boolean;
   qr_issued_at: string | null;
   checked_in_at: string | null;
+  /** The employee plus accompanying guests the gate has let in so far. */
+  people_entered: number;
   created_at: string;
 }
 

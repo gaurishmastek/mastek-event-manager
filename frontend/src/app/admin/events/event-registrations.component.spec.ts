@@ -46,6 +46,7 @@ const REGISTRATION: RegistrationAdminRead = {
   qr_issued: true,
   qr_issued_at: '2030-10-20T12:00:00',
   checked_in_at: null,
+  people_entered: 0,
   created_at: '2030-10-10T12:00:00',
 };
 

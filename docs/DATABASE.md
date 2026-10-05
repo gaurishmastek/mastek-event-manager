@@ -17,6 +17,10 @@ Migrations so far:
   `employee_name` (data kept) and adds `employee_id`, `employee_id_normalized`, `number_of_guests`; creates
   `registration_guests`. Existing registrations keep their passes and count as a party of one. Downgrading refuses
   to run once any registration has an employee id or guests.
+- `20260929_0005_attendance_family_food.py`, `20260930_0006_kid_ages.py` — attendance, family, food and kid-age
+  columns (see `BUSINESS_RULES.md`)
+- `20261005_0007_gate_verification.py` — `guest_entries` and `entry_rejections` for the officer's verification step.
+  Additive; downgrading refuses to run once either table has rows.
 
 ## Audit columns
 
@@ -153,8 +157,9 @@ Indexes: `(purpose, subject_ref, created_at)`, `(recipient_hash, created_at)`,
 
 ### `check_ins` (audited)
 
-One row per successful gate entry. `registration_id` unique — the database's final guarantee
-that a pass admits only once.
+One row per employee entry, written when the officer approves the first visit (after checking the employee's ID).
+`registration_id` unique — the database's final guarantee that the employee enters only once. Accompanying guests
+enter through `guest_entries`, below.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -163,10 +168,41 @@ that a pass admits only once.
 | `event_id` | int | FK → `events.id`, not null |
 | `officer_id` | int | not null — no FK yet |
 | `gate` | varchar(50) | nullable |
-| `method` | varchar(10) | default `"QR"` (no `MANUAL` entries yet — see BUSINESS_RULES.md) |
-| `checked_in_at` | datetime | not null |
+| `method` | varchar(10) | default `"QR"` (no `MANUAL` entries yet — see BUSINESS_RULES.md) || `checked_in_at` | datetime | not null |
 
 Index: `ix_check_ins_event_checked_in_at` on `(event_id, checked_in_at)`.
+
+### `guest_entries` (audited)
+
+One row per accompanying guest let in on the shared pass, at the first visit or on a later one.
+`registration_guest_id` is unique — the database's guarantee that each guest enters only once, even if two officers
+approve them at the same moment.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | int, PK | |
+| `check_in_id` | int | FK → `check_ins.id`, not null (the employee's entry this guest came in under); indexed |
+| `registration_guest_id` | int | FK → `registration_guests.id`, not null, **unique** |
+| `officer_id` | int | not null — the officer who let this guest in |
+| `gate` | varchar(50) | nullable |
+| `entered_at` | datetime | not null, server-generated |
+
+### `entry_rejections` (audited)
+
+Every time an officer refused entry. Rejecting leaves the registration unchanged, so the same pass can still be
+approved later (for example when the guest returns with the right ID).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | int, PK | |
+| `registration_id` | int | FK → `registrations.id`, not null |
+| `event_id` | int | FK → `events.id`, not null |
+| `officer_id` | int | not null |
+| `gate` | varchar(50) | nullable |
+| `reason` | varchar(20) | `ID_MISMATCH`, `ID_NOT_PRESENTED` or `OTHER` (CHECK constraint) |
+| `note` | varchar(255) | nullable; required (3–255 characters) when the reason is `OTHER`, enforced by the API |
+
+Index: `ix_entry_rejections_event_created_at` on `(event_id, created_at)`.
 
 ### `scan_attempts` (append-only, no `AuditMixin`)
 
@@ -179,7 +215,7 @@ Every scan, successful or not. The scanned token itself is never stored.
 | `officer_id` | int | not null |
 | `registration_id` | int | FK → `registrations.id`, nullable (null for `wrong_event`/unmatched scans) |
 | `gate` | varchar(50) | nullable |
-| `result` | varchar(30) | one of the `ScanResult` values — see [`BUSINESS_RULES.md`](./BUSINESS_RULES.md) |
+| `result` | varchar(30) | one of the `ScanResult` values (scans and decisions both log here) — see [`BUSINESS_RULES.md`](./BUSINESS_RULES.md) |
 | `created_at` | datetime | not null |
 
 Index: `ix_scan_attempts_event_created_at` on `(event_id, created_at)`.
