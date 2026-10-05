@@ -177,7 +177,9 @@ Access tokens are short-lived (≤ 30 min) and kept in memory. Refresh tokens li
 | `POST /events/{id}/registrations/{rid}/cancel` | admin | Cancel and release seat |
 | `GET /events/{id}/check-ins` | admin | Entry log |
 | `GET /events/{id}/stats` | admin; officer if assigned | Capacity, verified, checked in |
-| `GET /events/{id}/export.csv` | admin | Export, audited, formula-injection safe |
+| `GET /events/{id}/registrations/export.xlsx` | admin | All active registrations as an Excel workbook, masked contacts, formula-injection safe; export auditing remains a target |
+| `PATCH /events/{id}/registrations/{rid}` | admin | Correct employee identity/contact and permitted guest details; no OTP action |
+| `POST /events/{id}/registrations/{rid}/qr` | admin | Download a replacement QR for a verified, not-checked-in party; admin sends it manually |
 
 ### Gate (officer)
 

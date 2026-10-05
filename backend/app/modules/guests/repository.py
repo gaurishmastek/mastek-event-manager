@@ -1,10 +1,10 @@
 # Postponed annotations: the `list` method would otherwise shadow the builtin in later signatures.
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from datetime import datetime
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.db.mixins import utcnow
@@ -29,6 +29,18 @@ class RegistrationRepository:
 
     def get_by_public_id(self, public_id: str) -> Registration | None:
         stmt = select(Registration).where(Registration.public_id == public_id, Registration.deleted_at.is_(None))
+        return self.db.scalars(stmt).first()
+
+    def get_by_event_and_public_id_for_update(self, event_id: int, public_id: str) -> Registration | None:
+        stmt = (
+            select(Registration)
+            .where(
+                Registration.event_id == event_id,
+                Registration.public_id == public_id,
+                Registration.deleted_at.is_(None),
+            )
+            .with_for_update()
+        )
         return self.db.scalars(stmt).first()
 
     def get_by_event_and_email(self, event_id: int, email_hash: str) -> Registration | None:
@@ -98,12 +110,51 @@ class RegistrationRepository:
         )
         return list(self.db.scalars(stmt)), total
 
+    def iter_for_export(self, event_id: int) -> Iterator[Registration]:
+        """Yield every active registration for an event in the admin list's deterministic order.
+
+        Keyset batches keep the ORM identity map from growing with the full event and let the
+        select-in guest relationship finish loading before the next MySQL query starts.
+        """
+        batch_size = 500
+        cursor: tuple[datetime, int] | None = None
+        while True:
+            conditions = [Registration.event_id == event_id, Registration.deleted_at.is_(None)]
+            if cursor is not None:
+                created_at, registration_id = cursor
+                conditions.append(
+                    or_(
+                        Registration.created_at < created_at,
+                        and_(Registration.created_at == created_at, Registration.id < registration_id),
+                    )
+                )
+            stmt = (
+                select(Registration)
+                .where(*conditions)
+                .order_by(Registration.created_at.desc(), Registration.id.desc())
+                .limit(batch_size)
+            )
+            rows = list(self.db.scalars(stmt))
+            if not rows:
+                return
+            yield from rows
+            if len(rows) < batch_size:
+                return
+            last = rows[-1]
+            cursor = (last.created_at, last.id)
+
     def add(self, registration: Registration) -> Registration:
         self.db.add(registration)
         self.db.flush()
         return registration
 
-    def set_guests(self, registration: Registration, guests: Sequence[tuple[str, GuestType, int | None]]) -> None:
+    def set_guests(
+        self,
+        registration: Registration,
+        guests: Sequence[tuple[str, GuestType, int | None]],
+        *,
+        actor_id: int | None = None,
+    ) -> None:
         """Make the registration's active guests exactly `guests` (name, type and age), in order, without
         hard-deleting rows.
 
@@ -127,6 +178,8 @@ class RegistrationRepository:
                         position=position,
                         guest_type=guest_type.value,
                         age=age,
+                        created_by=actor_id,
+                        updated_by=actor_id,
                     )
                 )
             else:
@@ -136,10 +189,13 @@ class RegistrationRepository:
                 row.deleted_at = None
                 row.deleted_by = None
                 row.updated_at = now
+                row.updated_by = actor_id
         for position, row in existing.items():
             if position >= len(guests) and row.deleted_at is None:
                 row.deleted_at = now
                 row.updated_at = now
+                row.deleted_by = actor_id
+                row.updated_by = actor_id
         registration.number_of_guests = len(guests)
         self.db.flush()
         self.db.expire(registration, ["guests"])

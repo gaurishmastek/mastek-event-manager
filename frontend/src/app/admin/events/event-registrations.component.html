@@ -4,7 +4,22 @@
       <a routerLink="/admin/events" class="text-sm text-muted-foreground underline">Events</a>
       <h1 class="text-xl font-semibold">Registrations{{ event() ? ' · ' + event()!.title : '' }}</h1>
     </div>
+    <app-button variant="outline" [loading]="exporting()" (click)="exportAll()">Export all to Excel</app-button>
   </div>
+
+  @if (exportErrorMessage()) {
+    <p class="text-sm text-destructive" role="alert">{{ exportErrorMessage() }}</p>
+  }
+  @if (editMessage()) {
+    <p class="text-sm text-success" role="status">{{ editMessage() }}</p>
+  }
+  @if (qrErrorMessage()) {
+    <p class="text-sm text-destructive" role="alert">{{ qrErrorMessage() }}</p>
+  }
+  @if (qrMessage()) {
+    <p class="text-sm text-success" role="status">{{ qrMessage() }}</p>
+  }
+  <p class="sr-only" aria-live="polite">{{ exportMessage() }}</p>
 
   <form class="flex flex-wrap items-end gap-3" (ngSubmit)="applyFilters()">
     <div>
@@ -68,6 +83,7 @@
               <th class="px-4 py-2 font-medium">QR pass</th>
               <th class="px-4 py-2 font-medium">Checked in</th>
               <th class="px-4 py-2 font-medium">Registered</th>
+              <th class="px-4 py-2 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -121,6 +137,20 @@
                 </td>
                 <td class="px-4 py-3 text-muted-foreground">{{ row.checked_in_at ? (utc(row.checked_in_at) | date: 'short') : '—' }}</td>
                 <td class="px-4 py-3 text-muted-foreground">{{ utc(row.created_at) | date: 'short' }}</td>
+                <td class="px-4 py-3">
+                  <div class="flex flex-col items-start gap-2">
+                    <button type="button" class="text-sm text-primary underline" (click)="startEdit(row)">Edit</button>
+                    <button
+                      type="button"
+                      class="text-sm text-primary underline disabled:cursor-not-allowed disabled:text-muted-foreground"
+                      [disabled]="row.status !== 'VERIFIED' || qrRegistrationId() !== null"
+                      [title]="row.status === 'VERIFIED' ? 'Generate a replacement QR pass' : 'QR codes are available only for verified registrations'"
+                      (click)="generateQr(row)"
+                    >
+                      {{ qrRegistrationId() === row.registration_id ? 'Generating…' : 'Download QR' }}
+                    </button>
+                  </div>
+                </td>
               </tr>
             }
           </tbody>
@@ -137,3 +167,71 @@
     </div>
   }
 </div>
+
+@if (editing(); as registration) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation">
+    <app-card class="max-h-full w-full max-w-2xl overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="edit-registration-title">
+      <form class="space-y-4 p-6" (ngSubmit)="saveEdit()">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="edit-registration-title" class="text-lg font-semibold">Edit registration</h2>
+            <p class="mt-1 text-sm text-muted-foreground">Contact email is shown only as a mask. Leave the replacement field blank to keep it unchanged.</p>
+          </div>
+          <button type="button" class="text-sm text-muted-foreground underline" (click)="cancelEdit()">Close</button>
+        </div>
+
+        @if (editErrorMessage()) {
+          <p class="text-sm text-destructive" role="alert">{{ editErrorMessage() }}</p>
+        }
+
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label for="edit-employee-id" class="mb-1 block text-sm font-medium">Employee ID</label>
+            <input id="edit-employee-id" name="editEmployeeId" maxlength="30" [ngModel]="editEmployeeId()" (ngModelChange)="editEmployeeId.set($event)" class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" required />
+          </div>
+          <div>
+            <label for="edit-employee-name" class="mb-1 block text-sm font-medium">Name</label>
+            <input id="edit-employee-name" name="editEmployeeName" maxlength="120" [ngModel]="editEmployeeName()" (ngModelChange)="editEmployeeName.set($event)" class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" required />
+          </div>
+        </div>
+
+        <div>
+          <label for="edit-email" class="mb-1 block text-sm font-medium">Replacement contact email</label>
+          <input id="edit-email" name="replacementEmail" type="email" maxlength="254" [ngModel]="replacementEmail()" (ngModelChange)="replacementEmail.set($event)" [placeholder]="registration.email_masked ?? 'Enter a new email only if it changed'" class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" />
+          <p class="mt-1 text-xs text-muted-foreground">No OTP is sent from this screen.</p>
+        </div>
+
+        @if (registration.attending) {
+          <fieldset [disabled]="editGuestsLocked()" class="space-y-3">
+            <legend class="text-sm font-medium">Guest details</legend>
+            @if (editGuestsLocked()) {
+              <p class="text-xs text-muted-foreground">Guest details cannot change after check-in. Identity and contact corrections are still allowed.</p>
+            }
+            <div>
+              <label for="edit-adult-name" class="mb-1 block text-sm">Adult guest (optional)</label>
+              <input id="edit-adult-name" name="editAdultName" maxlength="120" [ngModel]="editAdultName()" (ngModelChange)="editAdultName.set($event)" class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" />
+            </div>
+            <div class="space-y-2">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm">Kids (up to {{ maxKids }})</span>
+                <button type="button" class="text-sm text-primary underline disabled:text-muted-foreground" [disabled]="editGuestsLocked() || editKidNames().length >= maxKids" (click)="addEditKid()">Add kid</button>
+              </div>
+              @for (name of editKidNames(); track $index; let i = $index) {
+                <div class="grid grid-cols-[1fr_7rem_auto] gap-2">
+                  <input [id]="'edit-kid-name-' + i" [name]="'editKidName' + i" maxlength="120" [ngModel]="name" (ngModelChange)="setEditKidName(i, $event)" placeholder="Kid's name" class="flex h-9 min-w-0 rounded-md border border-input bg-background px-3 text-sm" />
+                  <input [id]="'edit-kid-age-' + i" [name]="'editKidAge' + i" inputmode="numeric" maxlength="2" [ngModel]="editKidAges()[i]" (ngModelChange)="setEditKidAge(i, $event)" placeholder="Age" class="flex h-9 min-w-0 rounded-md border border-input bg-background px-3 text-sm" />
+                  <button type="button" class="text-sm text-destructive underline" (click)="removeEditKid(i)">Remove</button>
+                </div>
+              }
+            </div>
+          </fieldset>
+        }
+
+        <div class="flex justify-end gap-2">
+          <app-button type="button" variant="outline" (click)="cancelEdit()">Cancel</app-button>
+          <app-button type="submit" [loading]="savingEdit()">Save changes</app-button>
+        </div>
+      </form>
+    </app-card>
+  </div>
+}

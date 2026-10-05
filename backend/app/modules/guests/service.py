@@ -1,7 +1,9 @@
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -14,7 +16,8 @@ from app.modules.events.repository import EventRepository
 from app.modules.guests.models import Registration, RegistrationStatus
 from app.modules.guests.qr import new_pass_token, qr_svg_data_uri
 from app.modules.guests.repository import RegistrationRepository
-from app.modules.guests.schemas import RegistrationCreate, normalize_employee_id
+from app.modules.guests.schemas import RegistrationAdminUpdate, RegistrationCreate, normalize_employee_id
+from app.modules.otp.models import OtpChallenge
 from app.modules.otp.service import GUEST_VERIFY, OtpIssued, OtpService
 
 
@@ -46,6 +49,14 @@ class DuplicateRegistrationError(Exception):
 
 class AlreadyCheckedInError(Exception):
     pass
+
+
+class RegistrationPartyEditLockedError(Exception):
+    """A checked-in party's accompanying guests are historical gate/audit data and cannot be changed."""
+
+
+class QrRegenerationUnavailableError(Exception):
+    """Only an un-checked-in verified attendee can receive a replacement pass."""
 
 
 class NoEmailOnRegistrationError(Exception):
@@ -303,12 +314,123 @@ class RegistrationListService:
     """Admin read access to an event's registrations. Callers must already be authorized as admin."""
 
     def __init__(self, db: Session) -> None:
+        self.db = db
         self.events = EventRepository(db)
         self.registrations = RegistrationRepository(db)
 
     def list(
         self, event_id: int, *, limit: int, offset: int, search: str | None, status: str | None
     ) -> tuple[list[Registration], int]:
-        if self.events.get(event_id) is None:
+        event = self.events.get(event_id)
+        if event is None:
             raise EventNotFoundError
         return self.registrations.list(event_id, limit=limit, offset=offset, search=search, status=status)
+
+    def export(self, event_id: int) -> tuple[Event, Iterator[Registration]]:
+        """Return the event and every registration for its admin-only spreadsheet export."""
+        event = self.events.get(event_id)
+        if event is None:
+            raise EventNotFoundError
+        return event, self.registrations.iter_for_export(event_id)
+
+    def update(
+        self, event_id: int, registration_public_id: str, data: RegistrationAdminUpdate, *, actor_id: int
+    ) -> Registration:
+        """Apply an admin correction without issuing or resending any OTP.
+
+        Verified parties retain their opaque pass. If the party size changes, the event lock and
+        locking seat count ensure the corrected party still fits. Checked-in guest details remain
+        immutable because they are part of the gate-entry record; identity and contact corrections
+        are still allowed.
+        """
+        event = self.events.get_for_update(event_id)
+        if event is None:
+            raise EventNotFoundError
+        registration = self.registrations.get_by_event_and_public_id_for_update(event_id, registration_public_id)
+        if registration is None:
+            self.db.rollback()
+            raise RegistrationNotFoundError
+        guests = data.accompanying_guests
+        current_guests = [(guest.name, guest.guest_type, guest.age) for guest in registration.guests]
+        if registration.status == RegistrationStatus.CHECKED_IN.value and guests != current_guests:
+            self.db.rollback()
+            raise RegistrationPartyEditLockedError
+        if not registration.attending and guests:
+            self.db.rollback()
+            raise ValueError("guest details cannot be added to a registration marked not attending")
+        if len(guests) > event.max_guests_per_registration:
+            self.db.rollback()
+            raise TooManyGuestsError(event.max_guests_per_registration)
+        if registration.status == RegistrationStatus.VERIFIED.value:
+            seats_taken = self.registrations.count_seats_taken(event.id, locking=True)
+            corrected_party_size = 1 + len(guests)
+            if seats_taken - registration.party_size + corrected_party_size > event.capacity:
+                self.db.rollback()
+                raise EventFullError
+
+        employee_id_normalized = normalize_employee_id(data.employee_id)
+        existing_employee = self.registrations.get_by_event_and_employee(event.id, employee_id_normalized)
+        if existing_employee is not None and existing_employee.id != registration.id:
+            self.db.rollback()
+            raise DuplicateRegistrationError
+
+        email_hash = keyed_hash(data.email, purpose="email") if data.email is not None else registration.email_hash
+        if email_hash is not None:
+            existing_email = self.registrations.get_by_event_and_email(event.id, email_hash)
+            if existing_email is not None and existing_email.id != registration.id:
+                self.db.rollback()
+                raise DuplicateRegistrationError
+
+        now = utcnow()
+        registration.employee_id = data.employee_id
+        registration.employee_id_normalized = employee_id_normalized
+        registration.employee_name = data.employee_name
+        if registration.status != RegistrationStatus.CHECKED_IN.value:
+            registration.family_attending = bool(guests) if registration.attending else None
+        registration.updated_at = now
+        registration.updated_by = actor_id
+        if data.email is not None:
+            registration.email_hash = email_hash
+            registration.email_encrypted = encrypt_pii(data.email)
+            registration.email_masked = mask_email(data.email)
+            # An old code was delivered to a previous address. Invalidate it without sending a replacement.
+            self.db.execute(
+                update(OtpChallenge)
+                .where(
+                    OtpChallenge.purpose == GUEST_VERIFY,
+                    OtpChallenge.subject_ref == registration.public_id,
+                    OtpChallenge.consumed_at.is_(None),
+                    OtpChallenge.invalidated_at.is_(None),
+                )
+                .values(invalidated_at=now)
+            )
+        if registration.status != RegistrationStatus.CHECKED_IN.value:
+            self.registrations.set_guests(registration, guests, actor_id=actor_id)
+        try:
+            self.db.commit()
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise DuplicateRegistrationError from exc
+        self.db.refresh(registration)
+        return registration
+
+    def regenerate_qr(self, event_id: int, registration_public_id: str, *, actor_id: int) -> IssuedPass:
+        """Replace a verified party's pass and return its SVG for immediate admin download only."""
+        event = self.events.get(event_id)
+        if event is None:
+            raise EventNotFoundError
+        registration = self.registrations.get_by_event_and_public_id_for_update(event_id, registration_public_id)
+        if registration is None:
+            self.db.rollback()
+            raise RegistrationNotFoundError
+        if registration.status != RegistrationStatus.VERIFIED.value:
+            self.db.rollback()
+            raise QrRegenerationUnavailableError
+        now = utcnow()
+        token = new_pass_token()
+        registration.qr_token_hash = token_hash(token)
+        registration.qr_issued_at = now
+        registration.updated_at = now
+        registration.updated_by = actor_id
+        self.db.commit()
+        return IssuedPass(registration=registration, event=event, token=token, qr_svg=qr_svg_data_uri(token))

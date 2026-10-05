@@ -223,6 +223,41 @@ class RegistrationAdminRead(BaseModel):
     created_at: datetime
 
 
+class RegistrationAdminUpdate(_StrictInput):
+    """Admin-only correction of one registration's identity and accompanying-family details.
+
+    `email` is deliberately a replacement-only field: responses never disclose the stored full
+    contact address, but an admin can supply a corrected address when needed.
+    """
+
+    employee_id: EmployeeId
+    employee_name: PersonName
+    email: Email | None = None
+    adult_name: PersonName | None = None
+    kid_names: list[PersonName] = Field(default_factory=list, max_length=MAX_ACCOMPANYING_KIDS)
+    kid_ages: list[KidAge] = Field(default_factory=list, max_length=MAX_ACCOMPANYING_KIDS)
+
+    @model_validator(mode="after")
+    def _guest_details_are_consistent(self) -> "RegistrationAdminUpdate":
+        if len(self.kid_ages) != len(self.kid_names):
+            raise ValueError("enter an age for every kid: kid_ages must match kid_names one for one")
+        return self
+
+    @property
+    def accompanying_guests(self) -> list[tuple[str, GuestType, int | None]]:
+        adult = [(self.adult_name, GuestType.ADULT, None)] if self.adult_name is not None else []
+        return adult + [(name, GuestType.KID, age) for name, age in zip(self.kid_names, self.kid_ages, strict=True)]
+
+
+class AdminQrPass(BaseModel):
+    """A newly generated pass returned only to an authorized admin for immediate download."""
+
+    registration_id: str
+    employee_name: str
+    qr_svg: str = Field(description="QR code as an SVG data URI; it contains the new opaque pass token")
+    issued_at: datetime
+
+
 class RegistrationAdminPage(BaseModel):
     items: list[RegistrationAdminRead]
     total: int
