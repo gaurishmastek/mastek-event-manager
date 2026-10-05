@@ -14,6 +14,7 @@ from app.db.mixins import utcnow
 from app.modules.events.models import Event
 from app.modules.events.repository import EventRepository
 from app.modules.guests.models import Registration, RegistrationStatus
+from app.modules.guests.pass_email import send_pass_email
 from app.modules.guests.qr import new_pass_token, qr_svg_data_uri
 from app.modules.guests.repository import RegistrationRepository
 from app.modules.guests.schemas import RegistrationAdminUpdate, RegistrationCreate, normalize_employee_id
@@ -170,8 +171,9 @@ class GuestRegistrationService:
         return self._send_otp(event, registration, ip=ip)
 
     def verify(self, public_id: str, code: str) -> IssuedPass | DeclineRecorded:
-        """Verify the OTP, reserve seats for the whole party, and issue a new pass. Verifying again
-        later re-issues the pass and invalidates the old QR code (e.g. for an employee who lost it).
+        """Verify the OTP, reserve seats for the whole party, issue a new pass and email it to the verified
+        address. Verifying again later re-issues (and re-emails) the pass and invalidates the old QR code
+        (e.g. for an employee who lost it).
 
         For an employee who said they will not attend, record the decline instead: no seat, no pass."""
         registration = self._get_registration(public_id)
@@ -213,6 +215,8 @@ class GuestRegistrationService:
         registration.qr_token_hash = token_hash(token)
         registration.qr_issued_at = now
         self.db.commit()
+        if registration.email_encrypted is not None:
+            send_pass_email(self.otp.email, decrypt_pii(registration.email_encrypted), registration, event, token)
         return IssuedPass(registration=registration, event=event, token=token, qr_svg=qr_svg_data_uri(token))
 
     def _find_existing(self, event: Event, identity: _Identity) -> Registration | None:
