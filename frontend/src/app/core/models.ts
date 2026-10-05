@@ -251,6 +251,24 @@ export interface RegistrationAdminPage {
   offset: number;
 }
 
+/** Admin correction payload. `email` is omitted to preserve the existing contact address. */
+export interface RegistrationAdminUpdate {
+  employee_id: string;
+  employee_name: string;
+  email?: string;
+  adult_name: string | null;
+  kid_names: string[];
+  kid_ages: number[];
+}
+
+/** A one-time QR SVG returned only to an admin so it can be downloaded and shared manually. */
+export interface AdminQrPass {
+  registration_id: string;
+  employee_name: string;
+  qr_svg: string;
+  issued_at: string;
+}
+
 export interface ApiError {
   error: {
     code: string;

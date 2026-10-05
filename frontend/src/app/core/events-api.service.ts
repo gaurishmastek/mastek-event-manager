@@ -1,7 +1,17 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { environment } from '../../environments/environment';
-import type { EventCreate, EventPage, EventRead, EventUpdate, RegistrationAdminPage, RegistrationStatus } from './models';
+import type {
+  AdminQrPass,
+  EventCreate,
+  EventPage,
+  EventRead,
+  EventUpdate,
+  RegistrationAdminPage,
+  RegistrationAdminRead,
+  RegistrationAdminUpdate,
+  RegistrationStatus,
+} from './models';
 
 function toParams(params: Record<string, string | number | boolean | undefined | null>): HttpParams {
   let httpParams = new HttpParams();
@@ -29,6 +39,30 @@ export class EventsApiService {
     params: { search?: string; status?: RegistrationStatus | ''; limit?: number; offset?: number } = {},
   ) {
     return this.http.get<RegistrationAdminPage>(`${this.base}/${eventId}/registrations`, { params: toParams(params) });
+  }
+
+  /** Admin only. Downloads every registration for the event, without list pagination or filters. */
+  exportRegistrations(eventId: number) {
+    return this.http.get(`${this.base}/${eventId}/registrations/export.xlsx`, {
+      observe: 'response',
+      responseType: 'blob',
+    });
+  }
+
+  /** Admin only. A missing `email` keeps the existing, intentionally masked contact address. */
+  updateRegistration(eventId: number, registrationId: string, payload: RegistrationAdminUpdate) {
+    return this.http.patch<RegistrationAdminRead>(
+      `${this.base}/${eventId}/registrations/${encodeURIComponent(registrationId)}`,
+      payload,
+    );
+  }
+
+  /** Admin only. Replaces the prior pass for a verified registration and returns a downloadable SVG. */
+  generateRegistrationQr(eventId: number, registrationId: string) {
+    return this.http.post<AdminQrPass>(
+      `${this.base}/${eventId}/registrations/${encodeURIComponent(registrationId)}/qr`,
+      {},
+    );
   }
 
   get(id: number) {

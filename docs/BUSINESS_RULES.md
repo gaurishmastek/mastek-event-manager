@@ -95,6 +95,24 @@ file calls out where current code differs from that spec.
   verified" timer (today an unverified `PENDING_OTP` row simply never reaches `VERIFIED`; it is
   not auto-expired), and CAPTCHA on the OTP-send step.
 
+### Admin registration export
+
+- Admins can download one XLSX containing every active (not soft-deleted) registration for an event, including all
+  registration states. The export is not limited by the list page's pagination, search or status filters.
+- The workbook contains employee and accompanying-guest names and operational registration/check-in details. Email
+  and mobile values remain masked, and OTP data, contact hashes/ciphertext and QR tokens/hashes are never exported.
+  Text that could be interpreted as an Excel formula is stored as literal text.
+- Export timestamps are presented in IST. The newest registrations appear first, matching the admin list.
+
+### Admin registration corrections
+
+- An admin may correct employee ID, employee name, a replacement contact email, and accompanying adult/kid details.
+  The existing email remains masked; leaving the replacement email blank preserves it. This flow never sends, resends,
+  verifies or displays an OTP. Replacing the email invalidates an outstanding code sent to the previous address.
+- Corrected verified parties are rechecked against duplicate employee/contact values, event guest limits and remaining
+  capacity. A checked-in party's guest details cannot change because they form part of the entry record, although the
+  employee identity and contact can be corrected.
+
 ## QR pass
 
 - One pass per registration (party), issued only on successful OTP verification (`guests/service.py::verify`).
@@ -107,6 +125,9 @@ file calls out where current code differs from that spec.
   address only, as a PNG attachment (`entry-pass.png`) with the event, time (IST) and party list in the text
   (`guests/pass_email.py`). The token itself is never written into the email text. A failed send is logged and
   does not fail the verification, since the pass is already shown on screen. Declined registrations get no email.
+- An admin may generate a replacement QR only for a verified party that has not checked in. Generating it replaces the
+  stored hash so the old pass stops working. The browser downloads the SVG for the admin to send through an approved
+  email channel; the application does not send email or OTPs from this action.
 - **Not yet implemented**: a pass-specific validity window (`valid_from`/`valid_until`); gate
   timing is currently computed per-event, not per-pass (see below).
 

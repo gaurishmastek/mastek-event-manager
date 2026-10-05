@@ -47,12 +47,23 @@ max_guests_per_registration, created_at, updated_at, created_by, updated_by, gat
 | Method & path | Access | Notes |
 |---|---|---|
 | `GET /events/{event_id}/registrations` | admin only (officers `403`, no token `401`) | Query: `limit` (1–100, default 20), `offset`, `search` (employee id or name, wildcards literal), `status` (`PENDING_OTP` \| `VERIFIED` \| `CHECKED_IN` \| `DECLINED`). `404` for a missing or deleted event. `Cache-Control: no-store` |
+| `GET /events/{event_id}/registrations/export.xlsx` | admin only (officers `403`, no token `401`) | Downloads every active registration for the event as an Excel workbook, newest first. It does not apply list pagination, search or status filters. `404` for a missing or deleted event. Response type `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, filename `event-{event_id}-registrations.xlsx`, `Cache-Control: no-store` |
+| `PATCH /events/{event_id}/registrations/{registration_id}` | admin only | Body: `RegistrationAdminUpdate` (`employee_id`, `employee_name`, replacement-only optional `email`, `adult_name`, `kid_names`, `kid_ages`). A missing `email` preserves the undisclosed contact address. Rechecks duplicate identity/contact, guest limits and verified-party capacity. A checked-in party's guest details are immutable, but its employee identity/contact can be corrected. It never issues, verifies or resends an OTP. `409` for duplicates, capacity or checked-in guest edits; `422` for invalid details. |
+| `POST /events/{event_id}/registrations/{registration_id}/qr` | admin only | Replaces the QR pass only for a `VERIFIED` registration and returns `AdminQrPass` (`registration_id`, `employee_name`, `qr_svg`, `issued_at`) for immediate download. The prior QR stops working. `409` for pending, declined or checked-in registrations. No email or OTP is sent. |
 
-Each item: `registration_id` (public UUID), `employee_id`, `employee_name`, `email_masked`, `mobile_masked`,
+Each JSON list item: `registration_id` (public UUID), `employee_id`, `employee_name`, `email_masked`, `mobile_masked`,
 `attending`, `family_attending`, `guest_names` (adult first, then kids), `adult_name`, `kid_names`, `kid_ages`, `food_preference`,
 `number_of_guests`, `party_size`, `status`, `verified_at`, `qr_issued`, `qr_issued_at`,
 `checked_in_at`, `created_at`. Newest first. Never included: the QR token or its hash, OTP data, and full or
 encrypted email/mobile.
+
+The workbook contains the same admin-safe registration data in one row per employee party: public registration id,
+employee id/name, masked contact details, attendance/family answers, guest names and kid ages, food preference, party
+counts, status, QR-issued flag and verification/issuance/check-in/registration timestamps. Timestamps are converted to
+IST. It never contains full contacts, contact hashes/ciphertext, QR tokens/hashes or OTP data, and formula-like text is
+escaped as literal text.
+
+`AdminQrPass.qr_svg` is a data URI containing the new opaque token and is deliberately short-lived in the browser: it is not persisted in the UI. It is the admin's responsibility to send the downloaded image through an approved email channel.
 
 ## Guest registration (public) — `app/modules/guests/router.py`
 
@@ -97,6 +108,6 @@ behaviour) — FastAPI's default `{"detail": "..."}` body is what callers get to
 ## Not yet implemented anywhere
 
 Refresh tokens (`/auth/refresh`), editing or deactivating staff accounts, event
-publish/close/cancel actions, export/stats endpoints, and the audit-log read endpoint
+publish/close/cancel actions, stats endpoints, and the audit-log read endpoint
 — all described in [`event-management.md`](./event-management.md#4-api) as the target API but
 absent from `main`.

@@ -74,6 +74,8 @@ bumps the user's `session_version`, revoking every earlier token.
   reveals nothing about who it belongs to.
 - One pass per party. Party details (employee id and name, guest names, party size, masked email and mobile) are
   returned only to an admin or an assigned officer, and only for `admitted` or `already_checked_in` scans.
+- The admin-only replacement-pass route is limited to verified, not-yet-checked-in registrations. It replaces the
+  stored token hash atomically and returns the SVG only for immediate download; it does not email the pass.
 
 ## Gate camera (frontend `gate/camera.ts`, `gate/scanner.component.ts`)
 
@@ -94,8 +96,15 @@ bumps the user's `session_version`, revoking every earlier token.
   response in this module.
 - Employee mobile numbers get the same treatment: `mobile_hash` (HMAC), `mobile_encrypted` (Fernet) and
   `mobile_masked` (`98•••••210`). Nothing decrypts them today; OTPs go by email only.
-- The admin registrations list returns only masked email and mobile, never the QR token or hash, OTP data or
-  ciphertext. Guest names and employee ids are stored in clear, as the gate and admins need to read them.
+- The admin registrations list and downloadable XLSX export return only masked email and mobile, never contact
+  hashes/ciphertext, the QR token or hash, or OTP data. They intentionally include employee ids, employee/guest names
+  and operational party/status/check-in details because admins need them to run the event. Formula-like workbook text
+  is escaped so opening the export cannot execute a value as an Excel formula.
+- Admin corrections also return only masked contacts. A supplied replacement email is encrypted and hashed server-side;
+  it is never returned, and any pending code for the old address is invalidated without sending a replacement OTP.
+- A downloaded workbook is a copy of personal data outside the application's access controls and retention process.
+  Admins must store and share it only for the event's operational purpose and remove local copies when no longer
+  needed.
 - `keyed_hash` is HMAC (not plain SHA-256) specifically because emails are relatively low-entropy —
   an unkeyed hash would be brute-forceable from a leaked table.
 - **Not yet implemented**: the scheduled retention job that anonymises names, guest names, email and mobile

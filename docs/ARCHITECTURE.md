@@ -17,7 +17,7 @@ backend/app/
     users/    staff accounts (admins and security officers)
     events/   event CRUD, officer-to-event scoping
     guests/   public employee registration (by event public_id), accompanying guests, OTP verification,
-              QR pass issuance, and the admin registrations list (admin_router.py)
+              QR pass issuance, plus admin registrations list/XLSX export/correction/QR download (admin_router.py)
     otp/      OTP generation, delivery and rate limiting (used by guest registration and staff sign-in)
     gate/     pass scanning and check-in, officer event-scope enforcement
   main.py     FastAPI app, mounts each module's router under /api/v1
@@ -47,7 +47,9 @@ gate/service.py   --> events/repository.py, gate/access.py     (officer scope)
 gate/service.py, events/schemas.py --> events/timing.py          (gate window, also exposed on EventRead)
 ```
 
-`guests/admin_router.py` is mounted behind authentication like the events router, and requires the admin role.
+`guests/admin_router.py` is mounted behind authentication like the events router, and requires the admin role for
+both the paginated registrations list and the all-registration XLSX export. The export is generated in write-only
+mode and streamed from a spooled file so larger events do not retain the whole workbook in application memory.
 
 `events`, `guests` and `gate` all depend on `auth/dependencies.py` only for `CurrentUser` and
 `require_roles(...)` — none of them depend on how a user is authenticated.
