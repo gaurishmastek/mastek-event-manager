@@ -1,11 +1,24 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, and_
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    and_,
+    func,
+    select,
+)
+from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.mixins import AuditMixin
+from app.modules.gate.models import GuestEntry
 
 
 class RegistrationStatus(str, enum.Enum):
@@ -131,9 +144,23 @@ class Registration(AuditMixin, Base):
         lazy="selectin",
     )
 
+    # Accompanying guests the gate has let in so far, read with the row so the admin list and export stay one query.
+    guests_entered: Mapped[int] = column_property(
+        select(func.count(GuestEntry.id))
+        .join(RegistrationGuest, RegistrationGuest.id == GuestEntry.registration_guest_id)
+        .where(RegistrationGuest.registration_id == id, GuestEntry.deleted_at.is_(None))
+        .correlate_except(GuestEntry, RegistrationGuest)
+        .scalar_subquery()
+    )
+
     @property
     def party_size(self) -> int:
         return 1 + self.number_of_guests
+
+    @property
+    def people_entered(self) -> int:
+        """Who has come in: the employee (once their ID was checked) plus each guest the gate has let in."""
+        return (1 if self.status == RegistrationStatus.CHECKED_IN.value else 0) + (self.guests_entered or 0)
 
     @property
     def guest_names(self) -> list[str]:

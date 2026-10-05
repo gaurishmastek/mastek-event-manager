@@ -122,14 +122,20 @@
         @if (view.response?.guest; as guest) {
           <dl class="mt-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-base text-gray-900">
             <dt class="text-gray-600">Party size</dt>
-            <dd class="text-2xl font-bold">{{ guest.party_size }} {{ guest.party_size === 1 ? 'person' : 'people' }}</dd>
+            <dd class="text-2xl font-bold" data-testid="party-size">
+              {{ guest.party_size }} {{ guest.party_size === 1 ? 'person' : 'people' }}
+            </dd>
             <dt class="text-gray-600">Employee</dt>
             <dd class="font-semibold">{{ guest.name }}</dd>
             @if (guest.employee_id) {
               <dt class="text-gray-600">Employee ID</dt>
-              <dd>{{ guest.employee_id }}</dd>
+              <dd [class]="awaiting(view) ? 'font-mono text-2xl font-bold' : ''" data-testid="employee-id">{{ guest.employee_id }}</dd>
             }
-            @if (guest.guest_names.length) {
+            @if (view.response?.people_entered !== null && view.response?.people_entered !== undefined && !awaiting(view)) {
+              <dt class="text-gray-600">Inside</dt>
+              <dd data-testid="people-entered">{{ view.response?.people_entered }} of {{ guest.party_size }}</dd>
+            }
+            @if (guest.guest_names.length && !awaiting(view)) {
               <dt class="text-gray-600">Guests</dt>
               <dd>
                 <ol class="list-decimal pl-5">
@@ -144,7 +150,7 @@
             <dt class="text-gray-600">Mobile</dt>
             <dd>{{ guest.mobile_masked || '—' }}</dd>
             @if (view.response?.checked_in_at; as at) {
-              <dt class="text-gray-600">{{ view.kind === 'admitted' ? 'Checked in' : 'First entry' }}</dt>
+              <dt class="text-gray-600">Employee entered</dt>
               <dd data-testid="checked-in-at">{{ utc(at) | date: 'd MMM, h:mm:ss a' : ist }} IST</dd>
             }
             @if (view.response?.gate) {
@@ -152,12 +158,167 @@
               <dd>{{ view.response?.gate }}</dd>
             }
           </dl>
+
+          @if (awaiting(view)) {
+            <div class="mt-4 space-y-3" data-testid="verify-panel">
+              @if (view.kind === 'pending_verification') {
+                <p class="rounded-md bg-white p-3 text-base text-gray-900">
+                  Ask for the employee’s ID card. It must show employee ID
+                  <strong class="font-mono text-xl">{{ guest.employee_id || '(none on file)' }}</strong>.
+                </p>
+                <label class="flex min-h-14 cursor-pointer items-center gap-3 rounded-md border-2 border-gray-300 bg-white p-3 text-base font-medium text-gray-900">
+                  <input
+                    type="checkbox"
+                    data-testid="employee-checked"
+                    class="h-6 w-6 shrink-0"
+                    [checked]="employeeChecked()"
+                    [disabled]="deciding()"
+                    (change)="employeeChecked.set($any($event.target).checked)"
+                  />
+                  <span>{{ guest.name }}: ID checked and present</span>
+                </label>
+              } @else {
+                <p class="rounded-md bg-white p-3 text-base text-gray-900" data-testid="employee-inside">
+                  {{ guest.name }} is already inside.
+                </p>
+              }
+
+              @if (guest.members.length) {
+                <fieldset class="space-y-2">
+                  <legend class="text-sm font-medium text-gray-700">
+                    {{ view.kind === 'pending_verification' ? 'Guests present now' : 'Guests who have arrived now' }}
+                  </legend>
+                  @for (member of guest.members; track member.id) {
+                    <label
+                      class="flex min-h-14 items-center gap-3 rounded-md border-2 border-gray-300 bg-white p-3 text-base text-gray-900"
+                      [class.opacity-60]="member.entered"
+                      [class.cursor-pointer]="!member.entered"
+                    >
+                      <input
+                        type="checkbox"
+                        class="h-6 w-6 shrink-0"
+                        [attr.data-testid]="'guest-' + member.id"
+                        [checked]="member.entered || isSelected(member.id)"
+                        [disabled]="member.entered || deciding()"
+                        (change)="toggleGuest(member.id)"
+                      />
+                      <span class="min-w-0 flex-1">
+                        {{ member.name }}
+                        <span class="text-sm text-gray-600">{{ memberLabel(member) }}</span>
+                      </span>
+                      @if (member.entered && member.entered_at) {
+                        <span class="shrink-0 text-sm text-gray-600" data-testid="member-entered-at">
+                          in at {{ utc(member.entered_at) | date: 'h:mm a' : ist }}
+                        </span>
+                      }
+                    </label>
+                  }
+                </fieldset>
+              }
+
+              <p class="text-base font-semibold text-gray-900" data-testid="entering-count" role="status">
+                Letting in {{ lettingIn(view) }} now · {{ insideNow(view) + lettingIn(view) }} of {{ guest.party_size }} inside
+              </p>
+              @if (view.kind === 'pending_verification' && guestsToArrive(view) > 0) {
+                <p class="text-sm text-gray-700">
+                  Guests not ticked can still come in later on this same pass.
+                </p>
+              }
+
+              @if (decisionError()) {
+                <p class="rounded-md border border-destructive bg-white p-2 text-sm text-destructive" role="alert" data-testid="decision-error">
+                  {{ decisionError() }}
+                </p>
+              }
+
+              @if (!rejecting()) {
+                <button
+                  type="button"
+                  data-testid="approve"
+                  class="flex h-14 w-full items-center justify-center rounded-md bg-success text-lg font-semibold text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:opacity-50"
+                  [disabled]="!canApprove(view)"
+                  (click)="approve()"
+                >
+                  {{ deciding() ? 'Saving…' : 'Approve entry' }}
+                </button>
+                <button
+                  type="button"
+                  data-testid="reject"
+                  class="flex h-12 w-full items-center justify-center rounded-md border-2 border-destructive bg-white text-base font-semibold text-destructive focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:opacity-50"
+                  [disabled]="deciding()"
+                  (click)="startReject()"
+                >
+                  Reject entry
+                </button>
+              } @else {
+                <fieldset class="space-y-2 rounded-md border-2 border-destructive bg-white p-3" data-testid="reject-panel">
+                  <legend class="px-1 text-sm font-semibold text-destructive">Why is entry refused?</legend>
+                  @for (option of reasons; track option.value) {
+                    <label class="flex min-h-11 cursor-pointer items-center gap-3 text-base text-gray-900">
+                      <input
+                        type="radio"
+                        name="reject-reason"
+                        class="h-5 w-5 shrink-0"
+                        [attr.data-testid]="'reason-' + option.value"
+                        [checked]="rejectReason() === option.value"
+                        [disabled]="deciding()"
+                        (change)="rejectReason.set(option.value)"
+                      />
+                      <span>{{ option.label }}</span>
+                    </label>
+                  }
+                  <label for="reject-note" class="block text-sm text-gray-700">
+                    Note {{ rejectReason() === 'OTHER' ? '(required, at least 3 characters)' : '(optional)' }}
+                  </label>
+                  <textarea
+                    id="reject-note"
+                    name="rejectNote"
+                    rows="2"
+                    maxlength="255"
+                    data-testid="reject-note"
+                    class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    [ngModel]="rejectNote()"
+                    [disabled]="deciding()"
+                    (ngModelChange)="rejectNote.set($event)"
+                  ></textarea>
+                  <button
+                    type="button"
+                    data-testid="confirm-reject"
+                    class="flex h-12 w-full items-center justify-center rounded-md bg-destructive text-base font-semibold text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:opacity-50"
+                    [disabled]="!canConfirmReject()"
+                    (click)="confirmReject()"
+                  >
+                    {{ deciding() ? 'Saving…' : 'Confirm refusal' }}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="cancel-reject"
+                    class="flex h-11 w-full items-center justify-center rounded-md border border-gray-400 bg-white text-base text-gray-900 disabled:opacity-50"
+                    [disabled]="deciding()"
+                    (click)="cancelReject()"
+                  >
+                    Back
+                  </button>
+                </fieldset>
+              }
+            </div>
+          }
         }
 
         @if (view.kind === 'session_expired') {
           <app-button class="mt-4 block w-full" (click)="signInAgain()">Sign in again</app-button>
         } @else if (view.kind === 'not_assigned' || view.kind === 'forbidden') {
           <app-button class="mt-4 block w-full" (click)="changeEvent()">Back to your events</app-button>
+        } @else if (awaiting(view)) {
+          <button
+            type="button"
+            data-testid="scan-next"
+            class="mt-3 flex h-11 w-full items-center justify-center rounded-md border border-gray-400 bg-white text-base text-gray-900 disabled:opacity-50"
+            [disabled]="deciding()"
+            (click)="scanNext()"
+          >
+            Cancel: scan another pass
+          </button>
         } @else {
           <button
             type="button"
@@ -187,7 +348,7 @@
             (ngModelChange)="manualToken.set($event)"
             class="flex h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
-          <app-button type="submit" [loading]="submitting()" [disabled]="!manualToken().trim() || !!result()">Check in</app-button>
+          <app-button type="submit" [loading]="submitting()" [disabled]="!manualToken().trim() || !!result()">Look up pass</app-button>
         </div>
         @if (manualError()) {
           <p class="text-xs text-destructive" role="alert">{{ manualError() }}</p>
@@ -216,7 +377,7 @@
                   <span class="shrink-0 text-muted-foreground">{{ utc(entry.checked_in_at) | date: 'h:mm a' : ist }}</span>
                 </div>
                 <div class="text-xs text-muted-foreground">
-                  Party of {{ entry.guest.party_size }} · {{ entry.guest.email_masked || entry.guest.contact }}@if (entry.gate) {<span> · {{ entry.gate }}</span>}
+                  Entered {{ entry.people_entered }} of {{ entry.guest.party_size }} · {{ entry.guest.email_masked || entry.guest.contact }}@if (entry.gate) {<span> · {{ entry.gate }}</span>}
                 </div>
               </li>
             } @empty {

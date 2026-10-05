@@ -5,7 +5,7 @@
 ```bash
 cd backend
 python -m venv .venv && . .venv/bin/activate
-pip install -r requirements-dev.txt
+pip install -e ".[dev]"
 cp .env.example .env          # set DATABASE_URL (MySQL); leave SECRET_KEY and PII_ENCRYPTION_KEY empty in dev
 alembic upgrade head
 python -m app.cli create-admin --email you@example.com --name "Your Name"

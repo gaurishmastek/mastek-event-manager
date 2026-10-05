@@ -43,7 +43,7 @@ Enforcement points:
 |---|---|
 | `events/repository.py` | `list()`/`get()` take an `officer_id`; when set, results are filtered to `officer_events` rows for that officer. `events/service.py` passes the viewer's id only when `viewer.role == ROLE_SECURITY_OFFICER`. |
 | `guests/admin_router.py` | `require_roles(admin)` on the registrations list, XLSX export, registration correction and replacement-QR routes; the Angular `/admin/events/:id/registrations` route guard is only a convenience. |
-| `gate/access.py::EventScopePolicy` | `allows(user, event_id)` — `True` for any admin; for an officer, `True` only if `officer_events` has a row for `(officer_id, event_id)`. Used by both `POST /gate/events/{id}/scan` and `GET /gate/events/{id}/entries`. |
+| `gate/access.py::EventScopePolicy` | `allows(user, event_id)` — `True` for any admin; for an officer, `True` only if `officer_events` has a row for `(officer_id, event_id)`. Used by `POST /gate/events/{id}/scan`, `POST /gate/events/{id}/decision` and `GET /gate/events/{id}/entries`. |
 
 An officer requesting an event (read, or gate scan/entries) they are not assigned to gets a
 `404`, the same as a nonexistent event — the API never reveals that an out-of-scope event exists.
@@ -55,7 +55,8 @@ An officer requesting an event (read, or gate scan/entries) they are not assigne
 | `GET /events` | all events | assigned events only | — |
 | `GET /events/{id}` | any | assigned only (else 404) | — |
 | `POST /events`, `PATCH /events/{id}`, `DELETE /events/{id}` | ✅ | ❌ (403) | — |
-| `POST /gate/events/{id}/scan` | any event | assigned events only (else 404) | — |
+| `POST /gate/events/{id}/scan` (look a pass up) | any event | assigned events only (else 404) | — |
+| `POST /gate/events/{id}/decision` (approve or reject entry) | any event | assigned events only (else 404) | — |
 | `GET /gate/events/{id}/entries` | any event | assigned events only (else 404) | — |
 | `GET/PUT/DELETE /events/{id}/officers...` | ✅ | ❌ (403) | — |
 | `GET /events/{id}/registrations` (registrations list, masked contacts) | ✅ | ❌ (403, even for assigned events) | — |

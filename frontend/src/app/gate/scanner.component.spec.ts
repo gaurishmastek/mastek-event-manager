@@ -4,7 +4,7 @@ import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { environment } from '../../environments/environment';
-import type { EventRead, ScanResponse } from '../core/models';
+import type { EventRead, PartyMember, ScannedGuest, ScanResponse } from '../core/models';
 import { SCANNER_PLATFORM, type QrDecoder, type ScannerPlatform } from './camera';
 import { ScannerComponent } from './scanner.component';
 
@@ -34,20 +34,59 @@ const EVENT: EventRead = {
   gate_closes_at: '2030-10-20T17:30:00',
 };
 
+const RAVI: PartyMember = { id: 11, name: 'Ravi Patil', type: 'ADULT', age: null, entered: false, entered_at: null };
+const MEERA: PartyMember = { id: 12, name: 'Meera Patil', type: 'KID', age: 8, entered: false, entered_at: null };
+
+const GUEST: ScannedGuest = {
+  name: 'Asha Patil',
+  contact: 'as•••@example.com',
+  employee_id: 'E1001',
+  guest_names: ['Ravi Patil', 'Meera Patil'],
+  party_size: 3,
+  email_masked: 'as•••@example.com',
+  mobile_masked: '98•••••210',
+  employee_entered: false,
+  members: [RAVI, MEERA],
+};
+
+/** First visit: the pass was only looked up. */
+const PENDING: ScanResponse = {
+  result: 'pending_verification',
+  message: '',
+  guest: GUEST,
+  checked_in_at: null,
+  gate: null,
+  people_entered: null,
+};
+
+/** The employee and Ravi are inside; Meera has not arrived. */
+const LATE: ScanResponse = {
+  result: 'pending_guests',
+  message: '',
+  guest: {
+    ...GUEST,
+    employee_entered: true,
+    members: [{ ...RAVI, entered: true, entered_at: '2030-10-20T13:05:00' }, MEERA],
+  },
+  checked_in_at: '2030-10-20T13:05:00',
+  gate: 'Gate 2',
+  people_entered: 2,
+};
+
 const ADMITTED: ScanResponse = {
   result: 'admitted',
   message: 'Entry allowed',
   guest: {
-    name: 'Asha Patil',
-    contact: 'as•••@example.com',
-    employee_id: 'E1001',
-    guest_names: ['Ravi Patil', 'Meera Patil'],
-    party_size: 3,
-    email_masked: 'as•••@example.com',
-    mobile_masked: '98•••••210',
+    ...GUEST,
+    employee_entered: true,
+    members: [
+      { ...RAVI, entered: true, entered_at: '2030-10-20T13:05:00' },
+      { ...MEERA, entered: true, entered_at: '2030-10-20T13:05:00' },
+    ],
   },
   checked_in_at: '2030-10-20T13:05:00',
   gate: 'Gate 2',
+  people_entered: 3,
 };
 
 class FakeTrack {
@@ -193,26 +232,250 @@ describe('ScannerComponent', () => {
     expect(el('[data-testid="camera-error"]')?.getAttribute('data-kind')).toBe('interrupted');
   });
 
-  it('submits only the decoded opaque token and shows the admitted party with the server time', () => {
+  /** Scan the pass and show the response; nothing else is sent. */
+  function scanPass(response: ScanResponse = PENDING, token = TOKEN): void {
+    component.handleDecoded(token);
+    http.expectOne(`${API}/gate/events/3/scan`).flush(response);
+    render();
+  }
+
+  function input(testId: string): HTMLInputElement {
+    return el(`[data-testid="${testId}"]`) as HTMLInputElement;
+  }
+
+  function click(testId: string): void {
+    input(testId).click();
+    render();
+  }
+
+  function flushEntries(): void {
+    http.expectOne(`${API}/gate/events/3/entries?limit=10&offset=0`).flush({ items: [], total: 0, limit: 10, offset: 0 });
+  }
+
+  it('submits only the decoded opaque token, then asks the officer to verify instead of admitting', () => {
     component.gate.set('Gate 2');
     component.handleDecoded(`  ${TOKEN}  `);
 
     const req = http.expectOne(`${API}/gate/events/3/scan`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ token: TOKEN, gate: 'Gate 2' });
-    req.flush(ADMITTED);
-    http.expectOne(`${API}/gate/events/3/entries?limit=10&offset=0`).flush({ items: [], total: 0, limit: 10, offset: 0 });
+    req.flush(PENDING);
     render();
 
     const result = el('[data-testid="scan-result"]')!;
-    expect(result.getAttribute('data-kind')).toBe('admitted');
-    expect(result.textContent).toContain('Admitted');
-    expect(result.textContent).toContain('3 people');
-    expect(result.textContent).toContain('E1001');
+    expect(result.getAttribute('data-kind')).toBe('pending_verification');
+    expect(result.textContent).toContain('Verify guest');
+    expect(el('[data-testid="party-size"]')?.textContent).toContain('3 people');
+    expect(el('[data-testid="employee-id"]')?.textContent).toContain('E1001');
     expect(result.textContent).toContain('Meera Patil');
-    expect(result.textContent).toContain('98•••••210');
-    // 13:05 UTC is 6:35 PM in Mumbai.
-    expect(el('[data-testid="checked-in-at"]')?.textContent).toContain('6:35:00 PM');
+    expect(result.textContent).toContain('Kid, 8 yrs');
+    expect(result.textContent).not.toContain('Admitted');
+    // Looking a pass up lets nobody in and records no entry.
+    http.expectNone(`${API}/gate/events/3/decision`);
+    http.expectNone(`${API}/gate/events/3/entries?limit=10&offset=0`);
+  });
+
+  it('keeps Approve disabled until the employee ID is ticked, then admits those ticked with the server time', () => {
+    component.gate.set('Gate 2');
+    scanPass();
+
+    expect((el('[data-testid="approve"]') as HTMLButtonElement).disabled).toBeTrue();
+    expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 0 now · 0 of 3 inside');
+
+    click('employee-checked');
+    click('guest-11');
+    expect((el('[data-testid="approve"]') as HTMLButtonElement).disabled).toBeFalse();
+    expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 2 now · 2 of 3 inside');
+
+    click('approve');
+    const req = http.expectOne(`${API}/gate/events/3/decision`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      token: TOKEN,
+      gate: 'Gate 2',
+      decision: 'approve',
+      employee_id_checked: true,
+      guest_ids_entered: [11],
+    });
+    req.flush(ADMITTED);
+    flushEntries();
+    render();
+
+    // No "Admitted" card: the scanner is straight back to ready, with a buzz instead.
+    expect(el('[data-testid="scan-result"]')).toBeNull();
+    expect(component.result()).toBeNull();
+    expect(platform.vibrate).toHaveBeenCalledWith(120);
+  });
+
+  it('refreshes the recent entries after an approval and ignores the same pass for 3 seconds', () => {
+    scanPass(LATE);
+    click('guest-12');
+    click('approve');
+    http.expectOne(`${API}/gate/events/3/decision`).flush(ADMITTED);
+    flushEntries();
+
+    component.handleDecoded(TOKEN);
+    http.expectNone(`${API}/gate/events/3/scan`);
+    // A different pass is read immediately.
+    component.handleDecoded('Zzz_999-yyy_888-XXX_777-www_666');
+    http.expectOne(`${API}/gate/events/3/scan`).flush(PENDING);
+  });
+
+  it('can untick a guest again, and the employee alone can be admitted', () => {
+    scanPass();
+    click('employee-checked');
+    click('guest-12');
+    click('guest-12');
+    expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 1 now');
+
+    click('approve');
+    const req = http.expectOne(`${API}/gate/events/3/decision`);
+    expect(req.request.body.guest_ids_entered).toEqual([]);
+    req.flush({ ...ADMITTED, people_entered: 1 });
+    flushEntries();
+  });
+
+  it('lets late guests in on the same pass without another ID check', () => {
+    scanPass(LATE);
+
+    expect(el('[data-testid="scan-result"]')?.getAttribute('data-kind')).toBe('pending_guests');
+    expect(el('[data-testid="employee-checked"]')).toBeNull();
+    expect(el('[data-testid="employee-inside"]')?.textContent).toContain('Asha Patil is already inside');
+    // Ravi is in already: ticked, locked, with his entry time.
+    expect(input('guest-11').checked).toBeTrue();
+    expect(input('guest-11').disabled).toBeTrue();
+    expect(el('[data-testid="member-entered-at"]')?.textContent).toContain('6:35 PM');
+    expect(input('guest-12').disabled).toBeFalse();
+    expect((el('[data-testid="approve"]') as HTMLButtonElement).disabled).toBeTrue();
+    expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 0 now · 2 of 3 inside');
+
+    click('guest-12');
+    expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 1 now · 3 of 3 inside');
+    click('approve');
+
+    const req = http.expectOne(`${API}/gate/events/3/decision`);
+    expect(req.request.body).toEqual({ token: TOKEN, gate: null, decision: 'approve', guest_ids_entered: [12] });
+    req.flush(ADMITTED);
+    flushEntries();
+  });
+
+  it('refuses entry with a reason, records nothing else and offers the next guest', () => {
+    scanPass();
+    click('employee-checked');
+    click('reject');
+
+    expect(el('[data-testid="reject-panel"]')).not.toBeNull();
+    expect((el('[data-testid="confirm-reject"]') as HTMLButtonElement).disabled).toBeTrue();
+    click('reason-ID_MISMATCH');
+    expect((el('[data-testid="confirm-reject"]') as HTMLButtonElement).disabled).toBeFalse();
+    click('confirm-reject');
+
+    const req = http.expectOne(`${API}/gate/events/3/decision`);
+    expect(req.request.body).toEqual({ token: TOKEN, gate: null, decision: 'reject', reason: 'ID_MISMATCH', note: null });
+    req.flush({ result: 'rejected', message: '', guest: null, checked_in_at: null, gate: null, people_entered: null });
+    render();
+
+    expect(el('[data-testid="scan-result"]')?.getAttribute('data-kind')).toBe('rejected');
+    expect(el('[data-testid="scan-result"]')?.textContent).toContain('Entry refused');
+    expect(el('[data-testid="scan-result"]')?.textContent).not.toContain('Asha Patil');
+    expect(el('[data-testid="scan-next"]')?.textContent).toContain('Scan next guest');
+    http.expectNone(`${API}/gate/events/3/entries?limit=10&offset=0`);
+  });
+
+  it('needs a note of at least three characters when the reason is Other', () => {
+    scanPass();
+    click('reject');
+    click('reason-OTHER');
+    const confirm = el('[data-testid="confirm-reject"]') as HTMLButtonElement;
+    expect(confirm.disabled).toBeTrue();
+
+    const note = el('[data-testid="reject-note"]') as HTMLTextAreaElement;
+    note.value = 'ab';
+    note.dispatchEvent(new Event('input'));
+    render();
+    expect(confirm.disabled).toBeTrue();
+
+    note.value = '  Badge is someone else’s ';
+    note.dispatchEvent(new Event('input'));
+    render();
+    expect(confirm.disabled).toBeFalse();
+
+    click('confirm-reject');
+    const req = http.expectOne(`${API}/gate/events/3/decision`);
+    expect(req.request.body).toEqual({ token: TOKEN, gate: null, decision: 'reject', reason: 'OTHER', note: 'Badge is someone else’s' });
+    req.flush({ result: 'rejected', message: '', guest: null, checked_in_at: null, gate: null, people_entered: null });
+  });
+
+  it('can go back from the reject panel to the approval without sending anything', () => {
+    scanPass();
+    click('reject');
+    click('cancel-reject');
+
+    expect(el('[data-testid="reject-panel"]')).toBeNull();
+    expect(el('[data-testid="approve"]')).not.toBeNull();
+    http.expectNone(`${API}/gate/events/3/decision`);
+  });
+
+  it('stays on the verification panel when a decision is not accepted or does not reach the server', () => {
+    scanPass();
+    click('employee-checked');
+    click('approve');
+    http
+      .expectOne(`${API}/gate/events/3/decision`)
+      .flush({ detail: 'Some of the selected guests are not on this pass. Scan the pass again.' }, { status: 422, statusText: 'Unprocessable' });
+    render();
+    expect(el('[data-testid="decision-error"]')?.textContent).toContain('not on this pass');
+    expect(el('[data-testid="scan-result"]')?.getAttribute('data-kind')).toBe('pending_verification');
+
+    click('approve');
+    http.expectOne(`${API}/gate/events/3/decision`).error(new ProgressEvent('error'), { status: 0 });
+    render();
+    expect(el('[data-testid="decision-error"]')?.textContent).toContain('nobody was checked in');
+    // The ticks survive, so the officer can simply try again.
+    expect(input('employee-checked').checked).toBeTrue();
+  });
+
+  it('sends one decision at a time', () => {
+    scanPass();
+    click('employee-checked');
+    component.approve();
+    component.approve();
+
+    http.expectOne(`${API}/gate/events/3/decision`).flush(ADMITTED);
+    flushEntries();
+  });
+
+  it('shows the pass as it now stands when guests were already let in elsewhere', () => {
+    scanPass(LATE);
+    click('guest-12');
+    click('approve');
+    http.expectOne(`${API}/gate/events/3/decision`).flush({ ...LATE, result: 'guests_already_entered' });
+    render();
+
+    expect(el('[data-testid="scan-result"]')?.getAttribute('data-kind')).toBe('guests_already_entered');
+    expect(el('[data-testid="scan-result"]')?.textContent).toContain('Already entered');
+  });
+
+  it('ends the session and stops on an expired token during a decision', () => {
+    scanPass();
+    click('employee-checked');
+    click('approve');
+    http.expectOne(`${API}/gate/events/3/decision`).flush({ detail: 'expired' }, { status: 401, statusText: 'Unauthorized' });
+    render();
+
+    expect(el('[data-testid="scan-result"]')?.getAttribute('data-kind')).toBe('session_expired');
+  });
+
+  it('clears the ticks when the next pass is scanned', () => {
+    scanPass();
+    click('employee-checked');
+    click('guest-11');
+    click('scan-next');
+
+    scanPass(PENDING, 'Zzz_999-yyy_888-XXX_777-www_666');
+
+    expect(input('employee-checked').checked).toBeFalse();
+    expect(input('guest-11').checked).toBeFalse();
   });
 
   it('sends one request however many frames show the same pass, until "Scan next guest"', () => {
@@ -233,7 +496,7 @@ describe('ScannerComponent', () => {
     http.expectNone(`${API}/gate/events/3/scan`);
     // ...but the next guest's pass is.
     component.handleDecoded('Zzz_999-yyy_888-XXX_777-www_666');
-    http.expectOne(`${API}/gate/events/3/scan`).flush({ ...ADMITTED, result: 'invalid', guest: null });
+    http.expectOne(`${API}/gate/events/3/scan`).flush({ ...PENDING, result: 'invalid', guest: null });
   });
 
   it('rejects codes that are not pass tokens without calling the API', () => {
@@ -247,8 +510,8 @@ describe('ScannerComponent', () => {
     for (const result of ['wrong_event', 'invalid', 'gate_closed'] as const) {
       component.scanNext();
       component.handleDecoded(TOKEN.replace('A', result[0]));
-      // Even if a response carried a guest, only admitted or already-used passes show one.
-      http.expectOne(`${API}/gate/events/3/scan`).flush({ ...ADMITTED, result });
+      // Even if a response carried a guest, only passes awaiting a decision, admitted or used show one.
+      http.expectOne(`${API}/gate/events/3/scan`).flush({ ...PENDING, result });
       render();
       const card = el('[data-testid="scan-result"]')!;
       expect(card.getAttribute('data-kind')).toBe(result);

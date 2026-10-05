@@ -220,6 +220,7 @@ class RegistrationAdminRead(BaseModel):
     qr_issued: bool
     qr_issued_at: datetime | None
     checked_in_at: datetime | None
+    people_entered: int = Field(0, description="The employee plus accompanying guests the gate has let in so far")
     created_at: datetime
 
 

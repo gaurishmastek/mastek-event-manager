@@ -7,7 +7,15 @@ import { AuthService } from '../core/auth.service';
 import { EventsApiService } from '../core/events-api.service';
 import { GateApiService } from '../core/gate-api.service';
 import { apiErrorMessage } from '../core/http-error';
-import type { EntryRead, EventRead, ScanResponse, ScanResult } from '../core/models';
+import type {
+  DecisionRequest,
+  EntryRead,
+  EventRead,
+  PartyMember,
+  RejectionReason,
+  ScanResponse,
+  ScanResult,
+} from '../core/models';
 import { IST, utcIso } from '../core/time';
 import { ButtonComponent } from '../ui/button/button.component';
 import { SpinnerComponent } from '../ui/spinner/spinner.component';
@@ -31,9 +39,22 @@ export interface ScanView {
   response: ScanResponse | null;
 }
 
+/** Shortest reasonable note for a refusal, matching the backend. */
+const MIN_NOTE_LENGTH = 3;
+
+export const REJECTION_REASONS: ReadonlyArray<{ value: RejectionReason; label: string }> = [
+  { value: 'ID_MISMATCH', label: 'ID does not match the registered employee ID' },
+  { value: 'ID_NOT_PRESENTED', label: 'No employee ID shown' },
+  { value: 'OTHER', label: 'Other (add a note)' },
+];
+
 const RESULT_VIEWS: Record<ViewKind, Omit<ScanView, 'detail' | 'response'>> = {
+  pending_verification: { kind: 'pending_verification', tone: 'warning', symbol: '?', heading: 'Verify guest' },
+  pending_guests: { kind: 'pending_guests', tone: 'warning', symbol: '+', heading: 'Guests arriving' },
   admitted: { kind: 'admitted', tone: 'success', symbol: '✓', heading: 'Admitted' },
+  rejected: { kind: 'rejected', tone: 'danger', symbol: '✕', heading: 'Entry refused' },
   already_checked_in: { kind: 'already_checked_in', tone: 'warning', symbol: '!', heading: 'Already checked in' },
+  guests_already_entered: { kind: 'guests_already_entered', tone: 'warning', symbol: '!', heading: 'Already entered' },
   wrong_event: { kind: 'wrong_event', tone: 'danger', symbol: '✕', heading: 'Wrong event' },
   invalid: { kind: 'invalid', tone: 'danger', symbol: '✕', heading: 'Invalid pass' },
   gate_closed: { kind: 'gate_closed', tone: 'danger', symbol: '✕', heading: 'Gate closed' },
@@ -45,17 +66,35 @@ const RESULT_VIEWS: Record<ViewKind, Omit<ScanView, 'detail' | 'response'>> = {
 };
 
 const RESULT_DETAIL: Record<ScanResult, string> = {
-  admitted: 'Let the whole party in.',
-  already_checked_in: 'This pass was already used. Do not admit again.',
+  pending_verification: 'Check the employee’s ID card, tick everyone who is present, then approve or reject.',
+  pending_guests: 'The employee is already in. Tick the guests who have arrived now, then approve.',
+  admitted: 'Let in the people ticked.',
+  rejected: 'Entry refused and recorded. Do not admit.',
+  already_checked_in: 'Everyone on this pass has already entered. Do not admit again.',
+  guests_already_entered: 'Some of those guests are already in. Nobody was added. Check who is still to arrive.',
   wrong_event: 'This pass is for a different event. Do not admit.',
   invalid: 'This is not a valid pass. Do not admit.',
   gate_closed: 'Entry is not open for this event right now. Do not admit.',
 };
 
+const PARTY_RESULTS: ReadonlyArray<ScanResult> = [
+  'pending_verification',
+  'pending_guests',
+  'admitted',
+  'already_checked_in',
+  'guests_already_entered',
+];
+
+/** True while the officer still has to approve or reject the pass in front of them. */
+export function awaitsDecision(view: ScanView): boolean {
+  return view.kind === 'pending_verification' || view.kind === 'pending_guests';
+}
+
 export function viewForResponse(response: ScanResponse): ScanView {
   const base = RESULT_VIEWS[response.result] ?? RESULT_VIEWS.error;
-  // Party details are shown only when the backend sends them, which it does only for admitted or used passes.
-  const showParty = response.result === 'admitted' || response.result === 'already_checked_in';
+  // Party details are shown only when the backend sends them, which it does only for passes of this event that
+  // are awaiting a decision, admitted or already used.
+  const showParty = PARTY_RESULTS.includes(response.result);
   return {
     ...base,
     detail: RESULT_DETAIL[response.result] ?? response.message,
@@ -87,8 +126,11 @@ export function viewForError(err: unknown): ScanView {
  *
  * The camera starts only when the officer asks, decodes QR codes on the device (native `BarcodeDetector` or the
  * ZXing fallback), and submits only the opaque pass token to `POST /gate/events/{id}/scan`. Frames are never
- * uploaded or stored. The backend decides every outcome and sets the check-in time. Scanning pauses while a
- * request is in flight and while a result is shown, so one pass in front of the camera produces one request.
+ * uploaded or stored. A scan only looks the pass up: the officer then checks the employee's ID card by eye, ticks
+ * who is present and approves (or rejects) with `POST /gate/events/{id}/decision`. The same pass can be scanned
+ * again later so guests who arrive after the employee can be let in. The backend decides every outcome and sets
+ * the entry times. Scanning pauses while a request is in flight and while a result is shown, so one pass in front
+ * of the camera produces one request.
  */
 @Component({
   selector: 'app-scanner',
@@ -126,6 +168,19 @@ export class ScannerComponent {
   readonly submitting = signal(false);
   readonly result = signal<ScanView | null>(null);
 
+  // The verification step for the pass on screen. Reset every time a pass is shown.
+  readonly reasons = REJECTION_REASONS;
+  /** The officer compared the employee's ID card with the registered employee ID. */
+  readonly employeeChecked = signal(false);
+  /** Accompanying guests ticked as present right now (never includes guests already inside). */
+  readonly selectedGuests = signal<number[]>([]);
+  readonly rejecting = signal(false);
+  readonly rejectReason = signal<RejectionReason | ''>('');
+  readonly rejectNote = signal('');
+  /** True while an approve or reject request is in flight. */
+  readonly deciding = signal(false);
+  readonly decisionError = signal('');
+
   readonly entries = signal<EntryRead[]>([]);
   readonly entriesState = signal<'loading' | 'ready' | 'error'>('loading');
   readonly entriesError = signal('');
@@ -136,6 +191,8 @@ export class ScannerComponent {
   private destroyed = false;
   private lastToken = '';
   private lastTokenReleasedAt = 0;
+  /** The pass awaiting a decision; kept in memory only, and sent back with the decision. */
+  private pendingToken = '';
   private readonly onVisibilityChange = () => {
     // Never keep the camera running in the background.
     if (document.visibilityState === 'hidden') this.stopCamera();
@@ -281,7 +338,9 @@ export class ScannerComponent {
     if (this.submitting() || this.result()) return;
     const token = extractPassToken(raw);
     if (token === null) {
-      this.showResult(viewForResponse({ result: 'invalid', message: '', guest: null, checked_in_at: null, gate: null }));
+      this.showResult(
+        viewForResponse({ result: 'invalid', message: '', guest: null, checked_in_at: null, gate: null, people_entered: null }),
+      );
       return;
     }
     if (token === this.lastToken && Date.now() - this.lastTokenReleasedAt < SAME_PASS_COOLDOWN_MS) return;
@@ -303,6 +362,138 @@ export class ScannerComponent {
   scanNext(): void {
     this.lastTokenReleasedAt = Date.now();
     this.result.set(null);
+    this.pendingToken = '';
+    this.resetVerification();
+  }
+
+  // ---- verification: approve or reject ---------------------------------------------------------
+
+  /** True while the officer still has to approve or reject the pass on screen. */
+  awaiting(view: ScanView): boolean {
+    return awaitsDecision(view);
+  }
+
+  /** "Adult" or "Kid, 8 yrs": what the officer needs to match a guest to the person in front of them. */
+  memberLabel(member: PartyMember): string {
+    if (member.type === 'KID') return member.age !== null ? `(Kid, ${member.age} yrs)` : '(Kid)';
+    return member.type === 'ADULT' ? '(Adult)' : '';
+  }
+
+  /** Guests of the pass on screen who are not inside yet. */
+  guestsToArrive(view: ScanView): number {
+    return (view.response?.guest?.members ?? []).filter((member) => !member.entered).length;
+  }
+
+  isSelected(guestId: number): boolean {
+    return this.selectedGuests().includes(guestId);
+  }
+
+  toggleGuest(guestId: number): void {
+    this.selectedGuests.update((ids) => (ids.includes(guestId) ? ids.filter((id) => id !== guestId) : [...ids, guestId]));
+  }
+
+  /** People inside already, before this approval. */
+  insideNow(view: ScanView): number {
+    return view.response?.people_entered ?? 0;
+  }
+
+  /** People this approval would let in: the employee (first visit only) plus the ticked guests. */
+  lettingIn(view: ScanView): number {
+    const employee = view.kind === 'pending_verification' && this.employeeChecked() ? 1 : 0;
+    return employee + this.selectedGuests().length;
+  }
+
+  canApprove(view: ScanView): boolean {
+    if (this.deciding() || this.rejecting()) return false;
+    // The first approval needs the employee's ID checked; later ones need at least one late guest ticked.
+    return view.kind === 'pending_verification' ? this.employeeChecked() : this.selectedGuests().length > 0;
+  }
+
+  canConfirmReject(): boolean {
+    const reason = this.rejectReason();
+    if (this.deciding() || !reason) return false;
+    return reason !== 'OTHER' || this.rejectNote().trim().length >= MIN_NOTE_LENGTH;
+  }
+
+  startReject(): void {
+    this.decisionError.set('');
+    this.rejecting.set(true);
+  }
+
+  cancelReject(): void {
+    this.rejecting.set(false);
+    this.rejectReason.set('');
+    this.rejectNote.set('');
+  }
+
+  approve(): void {
+    const view = this.result();
+    if (!view || !awaitsDecision(view) || !this.canApprove(view)) return;
+    // Only the first approval carries the ID check; guests arriving later are not the employee.
+    const idCheck = view.kind === 'pending_verification' ? { employee_id_checked: true } : {};
+    this.decide({ decision: 'approve', ...idCheck, guest_ids_entered: this.selectedGuests() });
+  }
+
+  confirmReject(): void {
+    const reason = this.rejectReason();
+    if (!reason || !this.canConfirmReject()) return;
+    this.decide({ decision: 'reject', reason, note: this.rejectNote().trim() || null });
+  }
+
+  private decide(fields: Omit<DecisionRequest, 'token' | 'gate'>): void {
+    if (this.deciding() || !this.pendingToken) return;
+    this.deciding.set(true);
+    this.decisionError.set('');
+    this.api.decide(this.eventId, { token: this.pendingToken, gate: this.gate().trim() || null, ...fields }).subscribe({
+      next: (response) => {
+        this.deciding.set(false);
+        if (response.result === 'admitted') {
+          // No confirmation card: the officer goes straight back to scanning. A short buzz stands in for it, and
+          // the recent-entries list shows the entry. The usual same-pass cooldown stops an instant re-read.
+          this.scanNext();
+          this.platform.vibrate(120);
+          this.loadEntries();
+          return;
+        }
+        this.showResponse(this.pendingToken, response);
+      },
+      error: (err) => {
+        this.deciding.set(false);
+        const view = viewForError(err);
+        if (view.kind === 'not_assigned' || view.kind === 'session_expired' || view.kind === 'forbidden') {
+          this.showResult(view);
+          this.stopCamera();
+          if (view.kind === 'session_expired') this.auth.clearSession();
+        } else {
+          // Stay on the verification panel so the officer can correct the ticks or try again.
+          this.decisionError.set(this.decisionErrorMessage(err));
+        }
+      },
+    });
+  }
+
+  private decisionErrorMessage(err: unknown): string {
+    const status = err instanceof HttpErrorResponse ? err.status : -1;
+    if (status === 0) return 'The decision did not reach the server, so nobody was checked in. Check the connection and try again.';
+    if (status === 422) return apiErrorMessage(err, 'That decision was not accepted. Nobody was checked in. Scan the pass again.');
+    return apiErrorMessage(err, 'The decision could not be completed. Nobody was checked in. Try again.');
+  }
+
+  private resetVerification(): void {
+    this.employeeChecked.set(false);
+    this.selectedGuests.set([]);
+    this.rejecting.set(false);
+    this.rejectReason.set('');
+    this.rejectNote.set('');
+    this.decisionError.set('');
+  }
+
+  /** Shows a scan or decision response; a pass still awaiting a decision starts a fresh verification. */
+  private showResponse(token: string, response: ScanResponse): void {
+    const view = viewForResponse(response);
+    this.resetVerification();
+    this.pendingToken = awaitsDecision(view) ? token : '';
+    this.showResult(view);
   }
 
   private submit(token: string): void {
@@ -311,8 +502,7 @@ export class ScannerComponent {
     this.api.scan(this.eventId, { token, gate: this.gate().trim() || null }).subscribe({
       next: (response) => {
         this.submitting.set(false);
-        this.showResult(viewForResponse(response));
-        if (response.result === 'admitted') this.loadEntries();
+        this.showResponse(token, response);
       },
       error: (err) => {
         this.submitting.set(false);
@@ -328,7 +518,8 @@ export class ScannerComponent {
 
   private showResult(view: ScanView): void {
     this.result.set(view);
-    this.platform.vibrate(view.tone === 'success' ? 120 : [200, 100, 200]);
+    // A pass awaiting the officer's decision is neither good nor bad news, so it gets a short tap.
+    this.platform.vibrate(awaitsDecision(view) ? 60 : view.tone === 'success' ? 120 : [200, 100, 200]);
   }
 
   // ---- navigation ----------------------------------------------------------------------------

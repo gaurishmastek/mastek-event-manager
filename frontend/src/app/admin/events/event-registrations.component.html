@@ -135,7 +135,14 @@
                     <div class="text-xs">{{ utc(row.qr_issued_at) | date: 'short' }}</div>
                   }
                 </td>
-                <td class="px-4 py-3 text-muted-foreground">{{ row.checked_in_at ? (utc(row.checked_in_at) | date: 'short') : '—' }}</td>
+                <td class="px-4 py-3 text-muted-foreground">
+                  @if (row.checked_in_at) {
+                    {{ utc(row.checked_in_at) | date: 'short' }}
+                    <span class="block text-xs" data-testid="people-entered">{{ row.people_entered }} of {{ row.party_size }} in</span>
+                  } @else {
+                    —
+                  }
+                </td>
                 <td class="px-4 py-3 text-muted-foreground">{{ utc(row.created_at) | date: 'short' }}</td>
                 <td class="px-4 py-3">
                   <div class="flex flex-col items-start gap-2">
