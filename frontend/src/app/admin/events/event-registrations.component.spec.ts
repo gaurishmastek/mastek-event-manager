@@ -18,6 +18,7 @@ const EVENT: EventRead = {
   ends_at: null,
   capacity: 100,
   max_guests_per_registration: 5,
+  registration_open: true,
   created_at: '2026-09-28T10:00:00',
   updated_at: '2026-09-28T10:00:00',
   created_by: 1,

@@ -62,6 +62,7 @@ Staff accounts: admins and security officers. Guests never get a row here.
 | `ends_at` | datetime | nullable |
 | `capacity` | int | not null, `CHECK (capacity > 0)`. Counted in people |
 | `max_guests_per_registration` | int | not null, default 5, `CHECK (0..10)` (`ck_events_max_guests_range`) |
+| `registration_open` | bool | not null, default true. Admin switch to close registration early (migration 20261007_0008) |
 
 Constraint: `ck_events_ends_after_starts` — `ends_at IS NULL OR ends_at >= starts_at`.
 

@@ -17,13 +17,14 @@
   } @else {
     <app-card>
       <div class="overflow-x-auto">
-      <table class="w-full min-w-[40rem] text-sm">
+      <table class="w-full min-w-[44rem] text-sm">
         <thead class="border-b border-border text-left text-muted-foreground">
           <tr>
             <th class="px-4 py-2 font-medium">Title</th>
             <th class="px-4 py-2 font-medium">Location</th>
             <th class="px-4 py-2 font-medium">Starts</th>
             <th class="px-4 py-2 font-medium">Capacity</th>
+            <th class="px-4 py-2 font-medium">Registration</th>
             <th class="px-4 py-2"></th>
           </tr>
         </thead>
@@ -34,6 +35,7 @@
               <td class="px-4 py-3 text-muted-foreground">{{ event.location }}</td>
               <td class="px-4 py-3 text-muted-foreground">{{ event.starts_at | date: 'medium' }}</td>
               <td class="px-4 py-3 text-muted-foreground">{{ event.capacity }}</td>
+              <td class="px-4 py-3 text-muted-foreground">{{ event.registration_open ? 'Open' : 'Closed' }}</td>
               <td class="px-4 py-3 text-right">
                 <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
                   <button
@@ -61,6 +63,25 @@
                     [attr.aria-label]="'Manage security officers for ' + event.title"
                     >Manage security</a
                   >
+                  @if (event.registration_open) {
+                    <button
+                      type="button"
+                      class="text-sm text-destructive underline"
+                      [attr.aria-label]="'Close registration for ' + event.title"
+                      (click)="setRegistrationOpen(event, false)"
+                    >
+                      Close registration
+                    </button>
+                  } @else {
+                    <button
+                      type="button"
+                      class="text-sm text-primary underline"
+                      [attr.aria-label]="'Reopen registration for ' + event.title"
+                      (click)="setRegistrationOpen(event, true)"
+                    >
+                      Reopen registration
+                    </button>
+                  }
                   <a [routerLink]="['/admin/events', event.id, 'edit']" class="text-sm text-primary underline">Edit</a>
                   <button type="button" class="text-sm text-destructive underline" (click)="remove(event)">Delete</button>
                 </div>
@@ -69,7 +90,7 @@
             </tr>
             @if (manualCopy()?.eventId === event.id) {
               <tr class="border-b border-border last:border-0">
-                <td colspan="5" class="px-4 pb-3">
+                <td colspan="6" class="px-4 pb-3">
                   <label [for]="'link-' + event.id" class="mb-1 block text-xs text-destructive">
                     Couldn't copy automatically. Select the link and copy it:
                   </label>

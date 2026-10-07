@@ -71,6 +71,16 @@ export class EventListComponent {
     (target as HTMLInputElement | null)?.select();
   }
 
+  setRegistrationOpen(event: EventRead, open: boolean): void {
+    if (!open && !confirm(`Close registration for "${event.title}"? Guests will no longer be able to register.`)) return;
+    this.errorMessage.set('');
+    this.api.update(event.id, { registration_open: open }).subscribe({
+      next: (updated) => this.events.update((list) => list.map((e) => (e.id === updated.id ? updated : e))),
+      error: (err) =>
+        this.errorMessage.set(apiErrorMessage(err, `Could not ${open ? 'reopen' : 'close'} registration.`)),
+    });
+  }
+
   remove(event: EventRead): void {
     if (!confirm(`Delete "${event.title}"? This can be reversed by an admin later (soft delete).`)) return;
     this.api.delete(event.id).subscribe({

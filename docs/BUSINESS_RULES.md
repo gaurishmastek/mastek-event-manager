@@ -76,8 +76,11 @@ file calls out where current code differs from that spec.
 - A `VERIFIED` registration is never changed from the public form. Submitting it again with the **same** employee id
   and email only sends a new code (to reissue a lost pass); with only one of the two matching it is refused with
   `409`, without sending a code or revealing the masked address. A `CHECKED_IN` registration gets `409`.
-- Registration is only accepted while `now < (event.ends_at or event.starts_at)` — there is no
-  separate "registration closes" time or admin action to close registration early yet.
+- Registration is only accepted while `events.registration_open` is true and
+  `now < (event.ends_at or event.starts_at)`. An admin can close registration early (and reopen it) from the
+  events list or with `PATCH /events/{id}` `{"registration_open": false}`. While closed, the public page shows
+  "not open", new sign-ups and OTP verification of unverified sign-ups get `409`.
+  Already issued passes and gate check-in are unaffected.
 - Capacity counts **people**: seats taken = `sum(1 + number_of_guests)` over `VERIFIED` and `CHECKED_IN`
   registrations. A `PENDING_OTP` registration holds no seats. Whether the whole party fits is checked before sending
   an OTP (`_ensure_seats_available`) and re-checked at verification under a row lock on the event, with locking reads

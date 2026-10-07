@@ -382,3 +382,29 @@ def test_event_read_includes_the_gate_window(client, admin):
     assert with_end["gate_opens_at"] == "2031-10-20T09:30:00"
     assert with_end["gate_closes_at"] == "2031-10-20T16:30:00"
     assert without_end["gate_closes_at"] == "2031-10-21T00:30:00"
+
+
+def test_registration_is_open_by_default_and_admin_can_close_and_reopen(client, admin):
+    event = create(client)
+    assert event["registration_open"] is True
+
+    closed = client.patch(f"/api/v1/events/{event['id']}", json={"registration_open": False})
+    assert closed.status_code == 200
+    assert closed.json()["registration_open"] is False
+
+    reopened = client.patch(f"/api/v1/events/{event['id']}", json={"registration_open": True})
+    assert reopened.json()["registration_open"] is True
+
+
+@pytest.mark.parametrize("value", ["false", 0, None])
+def test_registration_open_must_be_a_boolean(client, admin, value):
+    event = create(client)
+    assert client.patch(f"/api/v1/events/{event['id']}", json={"registration_open": value}).status_code == 422
+
+
+def test_officer_cannot_close_registration(client, login_as):
+    login_as("admin", user_id=7)
+    event = create(client)
+    login_as("security_officer", user_id=8)
+
+    assert client.patch(f"/api/v1/events/{event['id']}", json={"registration_open": False}).status_code == 403

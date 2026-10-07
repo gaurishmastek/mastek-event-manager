@@ -38,9 +38,9 @@ and daily email budget (`EMAIL_DAILY_BUDGET`, default 2000).
 | `DELETE /events/{event_id}/officers/{user_id}` | admin | Unassign (soft delete). `204`; `404` if not assigned. The officer loses the event, its scanner and its entry list on their next request |
 
 `EventRead` fields: `id, public_id, title, description, location, starts_at, ends_at, capacity,
-max_guests_per_registration, created_at, updated_at, created_by, updated_by, gate_opens_at, gate_closes_at`
+max_guests_per_registration, registration_open, created_at, updated_at, created_by, updated_by, gate_opens_at, gate_closes_at`
 (the last two are computed from the gate window settings; see [`BUSINESS_RULES.md`](./BUSINESS_RULES.md)). `EventCreate`/`EventUpdate` accept
-`max_guests_per_registration` (whole number 0–10, default 5); `public_id` is server-generated and cannot be sent.
+`max_guests_per_registration` (whole number 0–10, default 5); `EventUpdate` also accepts `registration_open` (boolean; `false` closes public registration, admin only); `public_id` is server-generated and cannot be sent.
 
 ## Event registrations (admin) — `app/modules/guests/admin_router.py`
 
