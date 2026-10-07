@@ -2,7 +2,7 @@ import re
 from datetime import UTC, datetime
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictBool, computed_field, model_validator
 
 from app.modules.events.models import DEFAULT_MAX_GUESTS_PER_REGISTRATION, MAX_GUESTS_PER_REGISTRATION_CAP
 from app.modules.events.timing import gate_window_for
@@ -77,10 +77,11 @@ class EventUpdate(_StrictInput):
     ends_at: AwareDatetime | None = None
     capacity: Capacity | None = None
     max_guests_per_registration: MaxGuests | None = None
+    registration_open: StrictBool | None = None
 
     @model_validator(mode="after")
     def _reject_null_required(self) -> "EventUpdate":
-        for name in ("title", "location", "starts_at", "capacity", "max_guests_per_registration"):
+        for name in ("title", "location", "starts_at", "capacity", "max_guests_per_registration", "registration_open"):
             if name in self.model_fields_set and getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null")
         return self
@@ -98,6 +99,7 @@ class EventRead(BaseModel):
     ends_at: datetime | None
     capacity: int
     max_guests_per_registration: int
+    registration_open: bool
     created_at: datetime
     updated_at: datetime
     created_by: int | None

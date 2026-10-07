@@ -101,6 +101,11 @@ def registration_closes_at(event: Event) -> datetime:
     return event.ends_at or event.starts_at
 
 
+def is_registration_open(event: Event) -> bool:
+    """Open until the event ends (or starts, with no end time), unless an admin closed it earlier."""
+    return event.registration_open and utcnow() < registration_closes_at(event)
+
+
 class GuestRegistrationService:
     """Public flow: an employee registers themselves and their accompanying guests from the event's
     registration link, verifies their email by OTP, and receives one QR pass for the whole party.
@@ -118,7 +123,7 @@ class GuestRegistrationService:
 
     def event_info(self, event_public_id: str) -> tuple[Event, bool, int]:
         event = self._open_event(event_public_id, require_open=False)
-        return event, utcnow() < registration_closes_at(event), self._seats_left(event)
+        return event, is_registration_open(event), self._seats_left(event)
 
     def register(self, event_public_id: str, data: RegistrationCreate, *, ip: str | None) -> OtpSentResult:
         event = self._open_event(event_public_id)
@@ -295,7 +300,7 @@ class GuestRegistrationService:
     def _check_open(event: Event | None, *, require_open: bool) -> Event:
         if event is None:
             raise EventNotFoundError
-        if require_open and utcnow() >= registration_closes_at(event):
+        if require_open and not is_registration_open(event):
             raise RegistrationClosedError
         return event
 

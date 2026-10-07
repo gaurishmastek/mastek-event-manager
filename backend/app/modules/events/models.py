@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -35,6 +35,8 @@ class Event(AuditMixin, Base):
     max_guests_per_registration: Mapped[int] = mapped_column(
         Integer, nullable=False, default=DEFAULT_MAX_GUESTS_PER_REGISTRATION, server_default="5"
     )
+    # An admin can close registration early; the public link then behaves as past the registration cutoff.
+    registration_open: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
 
 
 class OfficerEvent(AuditMixin, Base):

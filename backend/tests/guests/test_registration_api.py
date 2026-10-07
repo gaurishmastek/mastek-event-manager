@@ -354,3 +354,30 @@ def test_pre_email_registration_asks_guest_to_register_again(client, mailbox, ma
     assert response.status_code == 409
     assert "email" in response.json()["detail"]
     assert mailbox.sent == []
+
+
+def test_closed_registration_shows_not_open_and_rejects_new_sign_ups(client, make_event, db_session):
+    event = make_event()
+    event.registration_open = False
+    db_session.commit()
+
+    info = client.get(f"{BASE}/events/{event.public_id}")
+    assert info.status_code == 200
+    assert info.json()["registration_open"] is False
+
+    response = client.post(f"{BASE}/events/{event.public_id}/registrations", json=registration_body())
+    assert response.status_code == 409
+    assert "closed" in response.json()["detail"]
+
+
+def test_closing_registration_blocks_unverified_sign_ups_from_verifying(client, make_event, db_session, mailbox):
+    event = make_event()
+    created = client.post(f"{BASE}/events/{event.public_id}/registrations", json=registration_body())
+    assert created.status_code == 202
+    registration_id = created.json()["registration_id"]
+    code = mailbox.last_code
+
+    event.registration_open = False
+    db_session.commit()
+
+    assert verify(client, registration_id, code).status_code == 409

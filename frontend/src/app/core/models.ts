@@ -56,6 +56,8 @@ export interface EventRead {
   ends_at: string | null;
   capacity: number;
   max_guests_per_registration: number;
+  /** False once an admin has closed registration early. */
+  registration_open: boolean;
   created_at: string;
   updated_at: string;
   created_by: number | null;
@@ -83,7 +85,7 @@ export interface EventCreate {
   max_guests_per_registration: number;
 }
 
-export type EventUpdate = Partial<EventCreate>;
+export type EventUpdate = Partial<EventCreate> & { registration_open?: boolean };
 
 // ---- Public guest registration (backend/app/modules/guests) ---------------
 

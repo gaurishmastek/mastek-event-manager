@@ -16,6 +16,7 @@ const EVENT: EventRead = {
   ends_at: null,
   capacity: 100,
   max_guests_per_registration: 5,
+  registration_open: true,
   created_at: '2026-09-28T10:00:00',
   updated_at: '2026-09-28T10:00:00',
   created_by: 1,
@@ -47,7 +48,7 @@ describe('EventListComponent registration link', () => {
     const actions = Array.from(fixture.nativeElement.querySelectorAll('td:last-child a, td:last-child button')).map(
       (node) => (node as HTMLElement).textContent!.trim(),
     );
-    expect(actions).toEqual(['Copy registration link', 'Open', 'Registrations', 'Manage security', 'Edit', 'Delete']);
+    expect(actions).toEqual(['Copy registration link', 'Open', 'Registrations', 'Manage security', 'Close registration', 'Edit', 'Delete']);
     const open: HTMLAnchorElement = fixture.nativeElement.querySelector('a[target="_blank"]');
     expect(open.href).toBe(link);
     expect(open.rel).toContain('noopener');
@@ -79,5 +80,60 @@ describe('EventListComponent registration link', () => {
     expect(fallback.value).toBe(link);
     expect(fallback.readOnly).toBeTrue();
     expect(copyButton().textContent).toContain('Copy registration link');
+  });
+});
+
+describe('EventListComponent close registration', () => {
+  let fixture: ComponentFixture<EventListComponent>;
+  let http: HttpTestingController;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [EventListComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+    }).compileComponents();
+    fixture = TestBed.createComponent(EventListComponent);
+    http = TestBed.inject(HttpTestingController);
+    http.expectOne(`${environment.apiBaseUrl}/events?limit=50`).flush({ items: [EVENT], total: 1, limit: 50, offset: 0 });
+    fixture.detectChanges();
+  });
+
+  function button(label: string): HTMLButtonElement {
+    return fixture.nativeElement.querySelector(`button[aria-label^="${label}"]`);
+  }
+
+  it('closes registration after confirming, then offers to reopen it', () => {
+    spyOn(window, 'confirm').and.returnValue(true);
+
+    button('Close registration').click();
+    const req = http.expectOne(`${environment.apiBaseUrl}/events/${EVENT.id}`);
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ registration_open: false });
+    req.flush({ ...EVENT, registration_open: false });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Closed');
+    expect(button('Close registration')).toBeNull();
+    expect(button('Reopen registration')).not.toBeNull();
+  });
+
+  it('sends nothing when the admin cancels the confirmation', () => {
+    spyOn(window, 'confirm').and.returnValue(false);
+
+    button('Close registration').click();
+
+    http.expectNone(`${environment.apiBaseUrl}/events/${EVENT.id}`);
+    expect(button('Close registration')).not.toBeNull();
+  });
+
+  it('shows an error and keeps the event open when closing fails', () => {
+    spyOn(window, 'confirm').and.returnValue(true);
+
+    button('Close registration').click();
+    http.expectOne(`${environment.apiBaseUrl}/events/${EVENT.id}`).flush({ detail: 'nope' }, { status: 500, statusText: 'x' });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('nope');
+    expect(button('Close registration')).not.toBeNull();
   });
 });
