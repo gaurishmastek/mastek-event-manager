@@ -42,6 +42,7 @@ UNKNOWN = "unknown"
 
 _ADDRESS = re.compile(r"[^\s<>@\"']+@[^\s<>@\"']+")
 _UNPRINTABLE = re.compile(r"[\x00-\x1f\x7f]+")
+_ONE_TIME_CODE = re.compile(r"\b\d{6}\b")
 
 
 class EmailDeliveryError(Exception):
@@ -79,6 +80,12 @@ class ConsoleEmailSender:
     def send(self, to: str, subject: str, body: str, attachments: Sequence[EmailAttachment] = ()) -> None:
         files = "".join(f"\n[attachment] {a.filename} ({a.mime_type}, {len(a.content)} bytes)" for a in attachments)
         print(f"[dev email] To: {mask_email(to)} | {subject}\n{body}{files}", file=sys.stdout, flush=True)
+        # Also keep it in the request logs, but without secrets or personal data: the one-time code is masked, and
+        # only code emails (which hold nothing else personal) have their text logged; other bodies hold names.
+        if not attachments and _ONE_TIME_CODE.search(body):
+            logger.info("[dev email] To: %s | %s\n%s", mask_email(to), subject, _ONE_TIME_CODE.sub("******", body))
+        else:
+            logger.info("[dev email] To: %s | %s%s", mask_email(to), subject, files)
 
 
 def redact_smtp_reply(reply: bytes | str | None, limit: int = 160) -> str:

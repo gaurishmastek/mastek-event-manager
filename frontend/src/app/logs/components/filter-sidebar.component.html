@@ -1,0 +1,101 @@
+<aside class="sidebar">
+  <div class="find">
+    <svg viewBox="0 0 16 16" width="15" height="15"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.4" fill="none" /><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+    <input #findInput placeholder="Find" [value]="find()" (input)="find.set($any($event.target).value)" />
+    <kbd>F</kbd>
+  </div>
+
+  <div class="nav-row">
+    <button class="ghost" title="Hide filters" (click)="collapse.emit()">
+      <svg viewBox="0 0 16 16" width="14" height="14"><path d="M10 3 5 8l5 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+    </button>
+    <span>Logs</span>
+  </div>
+
+  <div class="filters-head">
+    <span>Filters</span>
+    <button class="btn" (click)="reset.emit()">Reset</button>
+  </div>
+
+  <div class="scroll">
+    <!-- Timeline -->
+    <section>
+      <button class="section-head" (click)="toggle('timeline')">
+        <span class="chev" [class.open]="isOpen('timeline')">›</span>Timeline
+      </button>
+      @if (isOpen('timeline')) {
+        <label class="select">
+          <svg viewBox="0 0 16 16" width="14" height="14"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5" stroke="currentColor" fill="none" /><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" stroke="currentColor" /></svg>
+          <select [value]="filters().range" (change)="setRange($any($event.target).value)">
+            @for (r of ranges; track r.value) {
+              <option [value]="r.value" [selected]="r.value === filters().range">{{ r.label }}</option>
+            }
+          </select>
+        </label>
+      }
+    </section>
+
+    <!-- Console levels -->
+    <section>
+      <button class="section-head" (click)="toggle('level')">
+        <span class="chev" [class.open]="isOpen('level')">›</span>Contains Console Level
+      </button>
+      @if (isOpen('level')) {
+        <div class="box">
+          @for (l of levelRows(); track l.value) {
+            <label class="option">
+              <input type="checkbox" [checked]="isChecked('level', l.value)" (change)="toggleValue('level', l.value)" />
+              <span class="dot" [class]="'dot ' + l.value"></span>
+              <span class="label">{{ l.label }}</span>
+              <span class="count">{{ l.count }}</span>
+            </label>
+          }
+        </div>
+      }
+    </section>
+
+    <!-- Request path (prefix search) -->
+    <section>
+      <button class="section-head" (click)="toggle('path')">
+        <span class="chev" [class.open]="isOpen('path') || !!filters().path">›</span>Request Path
+      </button>
+      @if (isOpen('path') || filters().path) {
+        <input
+          class="text"
+          placeholder="/api/items"
+          [value]="filters().path"
+          (keydown.enter)="setPath($any($event.target).value)"
+          (blur)="setPath($any($event.target).value)"
+        />
+      }
+    </section>
+
+    <!-- Facet lists -->
+    @for (s of visibleSections(); track s.key) {
+      <section>
+        <button class="section-head" (click)="toggle(s.key)">
+          <span class="chev" [class.open]="isOpen(s.key)">›</span>{{ s.label }}
+          @if (filters()[s.key].length) {
+            <span class="badge">{{ filters()[s.key].length }}</span>
+          }
+        </button>
+        @if (isOpen(s.key)) {
+          <div class="box">
+            @for (o of options(s.key); track o.value) {
+              <label class="option">
+                <input type="checkbox" [checked]="isChecked(s.key, o.value)" (change)="toggleValue(s.key, o.value)" />
+                @if (s.key === 'status') {
+                  <span [class]="statusClass(o.value)"></span>
+                }
+                <span class="label" [title]="o.value">{{ o.value }}</span>
+                <span class="count">{{ o.count }}</span>
+              </label>
+            } @empty {
+              <div class="empty">No values in this time range</div>
+            }
+          </div>
+        }
+      </section>
+    }
+  </div>
+</aside>

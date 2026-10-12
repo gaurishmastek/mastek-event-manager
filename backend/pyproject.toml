@@ -17,6 +17,7 @@ dependencies = [
     "segno==1.6.6",
     "mailtrap==2.10.0",
     "openpyxl==3.1.5",
+    "pymongo==4.18.3",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +25,7 @@ dev = [
     "pytest==9.1.1",
     "httpx==0.28.1",
     "ruff==0.16.9",
+    "mongomock-motor==0.0.36",
 ]
 
 [tool.setuptools.packages.find]
@@ -32,6 +34,8 @@ include = ["app*"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+# Copied unchanged from the fastapi-logs-list project; keep it identical to its source rather than restyling it.
+extend-exclude = ["app/logs_viewer"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S"]

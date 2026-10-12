@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
@@ -16,6 +17,8 @@ WRITE_ROLES = (ROLE_ADMIN,)
 READ_ROLES = (ROLE_ADMIN, ROLE_SECURITY_OFFICER)
 
 router = APIRouter(prefix="/events", tags=["events"])
+
+logger = logging.getLogger(__name__)
 
 
 def get_event_service(db: Annotated[Session, Depends(get_db)]) -> EventService:
@@ -53,9 +56,11 @@ def list_events(
 @router.post("", response_model=EventRead, status_code=status.HTTP_201_CREATED)
 def create_event(data: EventCreate, service: Service, user: Writer) -> EventRead:
     try:
-        return service.create(data, actor_id=user.id)
+        event = service.create(data, actor_id=user.id)
     except EventValidationError as exc:
         raise _unprocessable(exc) from exc
+    logger.info("Event %s created by user %s", event.id, user.id)
+    return event
 
 
 @router.get("/{event_id}", response_model=EventRead)
@@ -69,11 +74,13 @@ def get_event(event_id: EventId, service: Service, user: Reader) -> EventRead:
 @router.patch("/{event_id}", response_model=EventRead)
 def update_event(event_id: EventId, data: EventUpdate, service: Service, user: Writer) -> EventRead:
     try:
-        return service.update(event_id, data, actor_id=user.id)
+        event = service.update(event_id, data, actor_id=user.id)
     except EventNotFoundError as exc:
         raise _not_found() from exc
     except EventValidationError as exc:
         raise _unprocessable(exc) from exc
+    logger.info("Event %s updated by user %s", event_id, user.id)
+    return event
 
 
 @router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -82,6 +89,7 @@ def delete_event(event_id: EventId, service: Service, user: Writer) -> Response:
         service.delete(event_id, actor_id=user.id)
     except EventNotFoundError as exc:
         raise _not_found() from exc
+    logger.info("Event %s deleted by user %s", event_id, user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -107,6 +115,7 @@ def assign_officer(
         service.assign_officer(event_id, user_id, actor_id=user.id)
     except EventNotFoundError as exc:
         raise _not_found() from exc
+    logger.info("Officer %s assigned to event %s by user %s", user_id, event_id, user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -116,4 +125,5 @@ def unassign_officer(event_id: EventId, user_id: UserId, service: Service, user:
         service.unassign_officer(event_id, user_id, actor_id=user.id)
     except EventNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found") from exc
+    logger.info("Officer %s unassigned from event %s by user %s", user_id, event_id, user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

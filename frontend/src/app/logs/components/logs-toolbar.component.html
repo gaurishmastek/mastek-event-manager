@@ -1,0 +1,44 @@
+<div class="toolbar">
+  <label class="search">
+    <svg viewBox="0 0 16 16" width="15" height="15"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.4" fill="none" /><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+    <input placeholder="Search logs..." [value]="text()" (input)="onInput($any($event.target).value)" (keydown.escape)="clear()" />
+    @if (text()) {
+      <button class="clear" title="Clear search" (click)="clear()">×</button>
+    }
+    @if (activeFilters() > 0) {
+      <span class="chip">{{ activeFilters() }} filter{{ activeFilters() === 1 ? '' : 's' }}</span>
+    }
+  </label>
+
+  <button class="btn live" [class.on]="live()" (click)="toggleLive.emit()" [title]="live() ? 'Stop live tail' : 'Stream new logs as they arrive'">
+    @if (live()) {
+      <span class="pulse"></span>
+    } @else {
+      <svg viewBox="0 0 16 16" width="15" height="15"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.4" fill="none" /><path d="M6.5 5.5v5l4-2.5z" fill="currentColor" /></svg>
+    }
+    Live
+  </button>
+
+  @if (demo()) {
+    <button class="btn" title="Insert fake logs (demo mode)" [disabled]="generating()" (click)="generate.emit()">
+      {{ generating() ? 'Generating…' : 'Generate sample logs' }}
+    </button>
+  }
+
+  <button class="btn icon" title="Refresh" (click)="refresh.emit()">
+    <svg viewBox="0 0 16 16" width="15" height="15" [class.spin]="loading()"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+  </button>
+
+  <div class="menu-wrap">
+    <button class="btn icon" title="Download" (click)="menuOpen.set(!menuOpen())">
+      <svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+    </button>
+    @if (menuOpen()) {
+      <div class="backdrop" (click)="menuOpen.set(false)"></div>
+      <div class="menu">
+        <button (click)="pick('json')">Download as JSON</button>
+        <button (click)="pick('csv')">Download as CSV</button>
+      </div>
+    }
+  </div>
+</div>

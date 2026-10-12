@@ -1,0 +1,94 @@
+<div class="logs-root">
+  @if (sidebarOpen()) {
+    <app-filter-sidebar
+      [filters]="filters()"
+      [facets]="facets()"
+      (filtersChange)="updateFilters($event)"
+      (reset)="resetFilters()"
+      (collapse)="sidebarOpen.set(false)"
+    />
+  }
+
+  <main class="main">
+    <header class="topbar">
+      <div class="project">
+        @if (!sidebarOpen()) {
+          <button class="icon-btn" title="Show filters" (click)="sidebarOpen.set(true)">
+            <svg viewBox="0 0 16 16" width="16" height="16"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+          </button>
+        }
+        <span class="triangle">▲</span>
+        <span class="project-name">{{ projectName() }}</span>
+      </div>
+      <h1 class="title">Logs</h1>
+      <div class="spacer"></div>
+    </header>
+
+    <app-logs-toolbar
+      [query]="filters().q"
+      [live]="live()"
+      [loading]="loading()"
+      [activeFilters]="activeFilterCount()"
+      [demo]="demoEnabled()"
+      [generating]="generating()"
+      (queryChange)="updateFilters({ q: $event })"
+      (toggleLive)="toggleLive()"
+      (refresh)="refresh()"
+      (generate)="generateSamples()"
+      (download)="download($event)"
+    />
+
+    @if (error()) {
+      <div class="error-banner">
+        {{ error() }}
+        <button class="btn" (click)="refresh()">Retry</button>
+      </div>
+    }
+
+    @if (live()) {
+      <div class="live-bar" [class]="'live-bar ' + liveStatus()">
+        <span class="live-dot"></span>
+        @switch (liveStatus()) {
+          @case ('connecting') { Connecting to the live stream… }
+          @case ('reconnecting') { Connection lost, reconnecting… }
+          @case ('failed') { {{ liveError() }} }
+          @default {
+            @if (liveCount() === 0) {
+              Live: waiting for new logs. Make a request to your API and it will appear at the top.
+            } @else {
+              Live: {{ liveCount() }} new {{ liveCount() === 1 ? 'log' : 'logs' }} since you pressed Live
+            }
+          }
+        }
+        @if (demoEnabled()) {
+          <label class="auto-demo" title="Demo mode: insert a few fake requests every couple of seconds">
+            <input type="checkbox" [checked]="autoDemo()" (change)="setAutoDemo($any($event.target).checked)" />
+            Add sample traffic
+          </label>
+        }
+        <button class="btn small" (click)="toggleLive()">Stop</button>
+      </div>
+    }
+
+    <app-logs-timeline [histogram]="histogram()" [live]="live()" />
+
+    <app-logs-table
+      [entries]="entries()"
+      [loading]="loading()"
+      [loadingMore]="loadingMore()"
+      [hasMore]="!!nextCursor()"
+      [selectedId]="selected()?.id ?? null"
+      (select)="select($event)"
+      (loadMore)="loadMore()"
+      [demo]="demoEnabled()"
+      [generating]="generating()"
+      (resetFilters)="resetFilters()"
+      (refresh)="refresh()"
+      (generate)="generateSamples()"
+    />
+  </main>
+
+  @if (selected(); as entry) {
+    <app-log-detail [entry]="entry" (close)="select(null)" (filter)="updateFilters($event)" />
+  }
+</div>

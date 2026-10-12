@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -21,6 +22,8 @@ from app.modules.users.models import User
 from app.modules.users.schemas import UserRead
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+logger = logging.getLogger(__name__)
 
 
 def get_auth_service(
@@ -55,13 +58,16 @@ def login(data: LoginRequest, request: Request, service: Service) -> LoginChalle
         challenge_id, resend_at = service.start_admin_login(data.email, data.password, ip=_client_ip(request))
     except (OtpThrottledError, OtpUnavailableError) as exc:
         raise _otp_http_error(exc) from exc
+    logger.info("Admin login: password accepted, code emailed")
     return LoginChallenge(challenge_id=challenge_id, resend_available_at=resend_at)
 
 
 @router.post("/login/verify", response_model=SessionResponse)
 def login_verify(data: LoginVerifyRequest, service: Service) -> SessionResponse:
     """Admin step 2: the code from the email."""
-    return service.finish_admin_login(data.challenge_id, data.code)
+    session = service.finish_admin_login(data.challenge_id, data.code)
+    logger.info("Admin signed in: user %s", session.user.id)
+    return session
 
 
 @router.post("/officer/otp", response_model=OfficerOtpSent, status_code=status.HTTP_202_ACCEPTED)
@@ -71,18 +77,22 @@ def officer_otp(data: OfficerOtpRequest, request: Request, service: Service) -> 
         resend_at = service.send_officer_code(data.email, ip=_client_ip(request))
     except (OtpThrottledError, OtpUnavailableError) as exc:
         raise _otp_http_error(exc) from exc
+    logger.info("Officer login: code requested")
     return OfficerOtpSent(resend_available_at=resend_at)
 
 
 @router.post("/officer/verify", response_model=SessionResponse)
 def officer_verify(data: OfficerVerifyRequest, service: Service) -> SessionResponse:
-    return service.finish_officer_login(data.email, data.code)
+    session = service.finish_officer_login(data.email, data.code)
+    logger.info("Officer signed in: user %s", session.user.id)
+    return session
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(user: CurrentUser, service: Service) -> Response:
     """Revokes every access token issued to this user so far."""
     service.logout(user)
+    logger.info("User %s signed out", user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

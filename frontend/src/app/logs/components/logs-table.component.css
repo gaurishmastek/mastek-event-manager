@@ -1,0 +1,269 @@
+:host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.table {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 160px 70px minmax(120px, 0.7fr) minmax(200px, 1.3fr) minmax(200px, 1.5fr);
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 24px 0 22px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid #161616;
+  background: transparent;
+  color: var(--logs-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.row > span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row.head {
+  min-height: 40px;
+  border-bottom: 1px solid var(--logs-border);
+  color: var(--logs-text-muted);
+  font-size: 14px;
+  cursor: default;
+}
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.body .row:hover {
+  background: var(--logs-bg-hover);
+}
+
+.row.selected {
+  background: var(--logs-bg-selected);
+}
+
+.row.lvl-warning {
+  border-left-color: var(--logs-warning);
+}
+
+.row.lvl-error,
+.row.lvl-fatal {
+  border-left-color: var(--logs-error);
+}
+
+.row.lvl-fatal {
+  background: color-mix(in srgb, var(--logs-fatal) 7%, transparent);
+}
+
+.time,
+.path,
+.duration,
+.status {
+  font-family: var(--logs-mono);
+  font-size: 12.5px;
+}
+
+.time {
+  color: var(--logs-text-muted);
+}
+
+.status {
+  display: inline-block;
+  min-width: 32px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.status.ok {
+  color: var(--logs-text);
+}
+
+.status.warning {
+  color: var(--logs-warning);
+  background: color-mix(in srgb, var(--logs-warning) 12%, transparent);
+}
+
+.status.error {
+  color: var(--logs-error);
+  background: color-mix(in srgb, var(--logs-error) 12%, transparent);
+}
+
+.status.none {
+  color: var(--logs-text-faint);
+  font-size: 11px;
+}
+
+.host {
+  color: var(--logs-text-muted);
+}
+
+.request {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.method {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--logs-text-muted);
+}
+
+.path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.duration {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--logs-text-faint);
+}
+
+.messages {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.msg {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--logs-text-muted);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--logs-text-faint);
+}
+
+.dot.warning {
+  background: var(--logs-warning);
+}
+
+.dot.error,
+.dot.fatal {
+  background: var(--logs-error);
+}
+
+.more {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--logs-bg-hover);
+  color: var(--logs-text-faint);
+  font-size: 11px;
+}
+
+.skeleton {
+  cursor: default;
+}
+
+.skeleton span {
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #161616, #222222, #161616);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 18px;
+}
+
+.empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--logs-border);
+  border-radius: 8px;
+  color: var(--logs-text-muted);
+}
+
+.empty p {
+  margin: 28px 0 22px;
+  color: var(--logs-text);
+}
+
+.empty-actions {
+  display: flex;
+  gap: 14px;
+}
+
+.btn {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--logs-border-strong);
+  border-radius: 6px;
+  background: var(--logs-bg);
+  color: var(--logs-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--logs-bg-hover);
+}
+
+.btn.primary {
+  border-color: var(--logs-text);
+  background: var(--logs-text);
+  color: var(--logs-bg);
+}
+
+.btn.primary:hover {
+  background: #cfcfcf;
+}
+
+.more-status {
+  padding: 14px;
+  color: var(--logs-text-faint);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 1100px) {
+  .row {
+    grid-template-columns: 130px 56px minmax(160px, 1fr) minmax(160px, 1.2fr);
+  }
+  .row > :nth-child(3) {
+    display: none;
+  }
+}

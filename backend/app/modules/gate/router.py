@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Mapping
 from typing import Annotated
 
@@ -21,6 +22,8 @@ from app.modules.gate.service import GateDecisionError, GateEventNotFoundError, 
 from app.modules.guests.models import Registration
 
 router = APIRouter(prefix="/gate", tags=["gate"])
+
+logger = logging.getLogger(__name__)
 
 EventId = Annotated[int, Path(ge=1, le=2_147_483_647)]
 GateUser = Annotated[CurrentUser, Depends(require_roles(*GATE_ROLES))]
@@ -117,6 +120,7 @@ def scan_pass(
         outcome = service.scan(user, event_id, data.token, data.gate)
     except GateEventNotFoundError as exc:
         raise _not_found() from exc
+    logger.info("Pass scanned at event %s by user %s: %s", event_id, user.id, outcome.result.value)
     return _scan_response(outcome)
 
 
@@ -136,6 +140,7 @@ def decide_entry(
         raise _not_found() from exc
     except GateDecisionError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    logger.info("Entry decision at event %s by user %s: %s", event_id, user.id, outcome.result.value)
     return _scan_response(outcome)
 
 

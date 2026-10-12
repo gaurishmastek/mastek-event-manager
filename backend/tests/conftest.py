@@ -5,6 +5,7 @@ import os
 os.environ["APP_ENV_FILE"] = ""
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ.pop("CORS_ORIGINS", None)
+os.environ.pop("LOGS_MONGODB_URL", None)  # request logs stay off unless a test turns them on
 
 from collections.abc import Iterator  # noqa: E402
 

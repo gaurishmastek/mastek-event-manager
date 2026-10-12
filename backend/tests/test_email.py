@@ -120,6 +120,24 @@ def test_console_sender_masks_the_address(capsys):
     assert "123456" in out
 
 
+def test_console_sender_logs_the_email_without_the_code(caplog):
+    with caplog.at_level(logging.INFO):
+        ConsoleEmailSender().send("asha.patil@example.com", "Your code", "Your code is 123456.\nIt expires soon.")
+
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "as•••@example.com | Your code" in logged
+    assert "Your code is ******." in logged
+    assert "123456" not in logged and "asha.patil" not in logged
+
+
+def test_console_sender_does_not_log_other_email_bodies(caplog):
+    with caplog.at_level(logging.INFO):
+        ConsoleEmailSender().send("asha.patil@example.com", "Your pass", "Hello Asha Patil, welcome.")
+
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "Your pass" in logged and "Asha Patil" not in logged
+
+
 def test_disabled_sender_refuses():
     with pytest.raises(EmailDeliveryError):
         DisabledEmailSender().send("a@example.com", "s", "b")

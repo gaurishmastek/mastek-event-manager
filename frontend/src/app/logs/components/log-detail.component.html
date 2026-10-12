@@ -1,0 +1,69 @@
+<aside class="panel">
+  <header>
+    <div class="headline">
+      @if (entry().type === 'request') {
+        <span [class]="statusClass()">{{ entry().status_code }}</span>
+        <span class="method">{{ entry().method }}</span>
+        <span class="path" [title]="entry().path">{{ entry().path }}</span>
+      } @else {
+        <span class="status none">LOG</span>
+        <span class="path">Application log</span>
+      }
+    </div>
+    <button class="ghost" title="Close (Esc)" (click)="close.emit()">×</button>
+  </header>
+
+  <div class="scroll">
+    <div class="summary">
+      <div>
+        <span class="k">Time</span>
+        <span class="v mono">{{ entry().timestamp | date: 'MMM dd, yyyy HH:mm:ss.SSS' }}</span>
+      </div>
+      @if (entry().duration_ms != null) {
+        <div>
+          <span class="k">Duration</span>
+          <span class="v mono">{{ entry().duration_ms | number: '1.0-2' }} ms</span>
+        </div>
+      }
+      <div>
+        <span class="k">Level</span>
+        <span class="v cap"><span class="dot" [class]="'dot ' + entry().level"></span>{{ entry().level }}</span>
+      </div>
+    </div>
+
+    <h3>Request</h3>
+    <dl>
+      @for (f of fields(); track f.label) {
+        <dt>{{ f.label }}</dt>
+        <dd>
+          <span class="mono">{{ f.value }}</span>
+          @if (f.filter) {
+            <button class="link" title="Show only logs with this value" (click)="filter.emit(f.filter)">Filter</button>
+          }
+        </dd>
+      }
+    </dl>
+
+    <h3>Messages <span class="n">{{ entry().messages.length }}</span></h3>
+    @for (m of entry().messages; track $index) {
+      <div class="message" [class]="'message lvl-' + m.level">
+        <div class="meta">
+          <span class="dot" [class]="'dot ' + m.level"></span>
+          <span class="mono">{{ m.timestamp | date: 'HH:mm:ss.SSS' }}</span>
+          <span class="lvl">{{ m.level }}</span>
+          <span class="logger">{{ m.logger }}</span>
+        </div>
+        <div class="text mono">{{ m.message }}</div>
+        @if (m.exception) {
+          <pre class="mono">{{ m.exception }}</pre>
+        }
+      </div>
+    } @empty {
+      <p class="none">No messages were logged during this request.</p>
+    }
+  </div>
+
+  <footer>
+    <button class="btn" (click)="copyJson()">{{ copied() ? 'Copied' : 'Copy as JSON' }}</button>
+  </footer>
+</aside>

@@ -7,6 +7,12 @@ export const ADMIN_ROUTES: Routes = [
     loadComponent: () => import('./login.component').then((m) => m.AdminLoginComponent),
   },
   {
+    // Full-screen request logs (the Vercel-style viewer from fastapi-logs-list), outside the admin shell.
+    path: 'logs',
+    canMatch: [requireRole('admin')],
+    loadChildren: () => import('../logs/logs.routes').then((m) => m.LOGS_ROUTES),
+  },
+  {
     path: '',
     canMatch: [requireRole('admin')],
     loadComponent: () => import('./shell/admin-shell.component').then((m) => m.AdminShellComponent),

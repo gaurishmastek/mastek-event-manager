@@ -1,0 +1,71 @@
+<div class="table">
+  <div class="row head">
+    <span>Time</span>
+    <span>Status</span>
+    <span>Host</span>
+    <span>Request</span>
+    <span>Messages</span>
+  </div>
+
+  <div class="body" #body (scroll)="onScroll(body)">
+    @for (e of entries(); track e.id) {
+      <button class="row" [class]="'row lvl-' + e.level" [class.selected]="e.id === selectedId()" (click)="select.emit(e)">
+        <span class="time">{{ e.timestamp | date: 'MMM dd HH:mm:ss.SS' }}</span>
+        <span>
+          @if (e.type === 'app') {
+            <span class="status none">LOG</span>
+          } @else {
+            <span [class]="statusClass(e)">{{ e.status_code ?? '—' }}</span>
+          }
+        </span>
+        <span class="host">{{ e.host || e.service }}</span>
+        <span class="request">
+          @if (e.method) {
+            <span class="method">{{ e.method }}</span>
+          }
+          <span class="path">{{ e.path || '—' }}</span>
+          @if (e.duration_ms != null) {
+            <span class="duration">{{ e.duration_ms < 1000 ? (e.duration_ms | number: '1.0-0') + 'ms' : (e.duration_ms / 1000 | number: '1.1-2') + 's' }}</span>
+          }
+        </span>
+        <span class="messages">
+          @if (summary(e); as s) {
+            <span class="dot" [class]="'dot ' + s.level"></span>
+            <span class="msg">{{ s.text }}</span>
+            @if (e.messages.length > 1) {
+              <span class="more">+{{ e.messages.length - 1 }}</span>
+            }
+          }
+        </span>
+      </button>
+    } @empty {
+      @if (loading()) {
+        @for (i of [1, 2, 3, 4, 5, 6, 7, 8]; track i) {
+          <div class="row skeleton"><span></span><span></span><span></span><span></span><span></span></div>
+        }
+      } @else {
+        <div class="empty">
+          <div class="empty-icon">
+            <svg viewBox="0 0 16 16" width="16" height="16"><path d="M5.5 4h8M5.5 8h8M5.5 12h8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" /><circle cx="2.5" cy="4" r="0.9" fill="currentColor" /><circle cx="2.5" cy="8" r="0.9" fill="currentColor" /><circle cx="2.5" cy="12" r="0.9" fill="currentColor" /></svg>
+          </div>
+          <p>No request logs found for the selected filters</p>
+          <div class="empty-actions">
+            <button class="btn primary" (click)="resetFilters.emit()">Reset Filters</button>
+            <button class="btn" (click)="refresh.emit()">Refresh</button>
+            @if (demo()) {
+              <button class="btn" [disabled]="generating()" (click)="generate.emit()">
+                {{ generating() ? 'Generating…' : 'Generate sample logs' }}
+              </button>
+            }
+          </div>
+        </div>
+      }
+    }
+
+    @if (loadingMore()) {
+      <div class="more-status">Loading more…</div>
+    } @else if (entries().length && !hasMore()) {
+      <div class="more-status">End of logs for this time range</div>
+    }
+  </div>
+</div>

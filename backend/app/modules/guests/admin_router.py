@@ -1,5 +1,6 @@
 """Admin view of an event's registrations. Mounted behind authentication; admins only."""
 
+import logging
 from collections.abc import Iterator
 from typing import Annotated, BinaryIO
 
@@ -30,6 +31,8 @@ from app.modules.guests.service import (
 )
 
 router = APIRouter(prefix="/events", tags=["admin: registrations"])
+
+logger = logging.getLogger(__name__)
 
 EventId = Annotated[int, Path(ge=1, le=2_147_483_647)]
 Admin = Annotated[CurrentUser, Depends(require_roles(ROLE_ADMIN))]
@@ -105,6 +108,7 @@ def export_registrations(event_id: EventId, service: Service, _: Admin) -> Strea
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found") from exc
 
     workbook = build_registration_workbook(registrations)
+    logger.info("Registrations exported for event %s", event_id)
     return StreamingResponse(
         _file_chunks(workbook),
         media_type=XLSX_MEDIA_TYPE,
@@ -124,7 +128,7 @@ def update_registration(
     admin: Admin,
 ) -> RegistrationAdminRead:
     try:
-        return to_admin_read(service.update(event_id, registration_id, data, actor_id=admin.id))
+        updated = to_admin_read(service.update(event_id, registration_id, data, actor_id=admin.id))
     except EventNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found") from exc
     except RegistrationNotFoundError as exc:
@@ -149,6 +153,8 @@ def update_registration(
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    logger.info("Registration %s of event %s updated by user %s", registration_id, event_id, admin.id)
+    return updated
 
 
 @router.post("/{event_id}/registrations/{registration_id}/qr", response_model=AdminQrPass)
@@ -164,6 +170,7 @@ def regenerate_registration_qr(event_id: EventId, registration_id: str, service:
             status_code=status.HTTP_409_CONFLICT,
             detail="A QR pass can be generated only for a verified registration that has not checked in",
         ) from exc
+    logger.info("QR pass regenerated for registration %s of event %s by user %s", registration_id, event_id, admin.id)
     issued_at = issued.registration.qr_issued_at
     if issued_at is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="QR issue time is unavailable")

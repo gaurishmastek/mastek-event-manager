@@ -11,6 +11,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   return next(
     req.clone({
       setHeaders: { Authorization: `Bearer ${token}` },
+      // The logs page adds ?token= for its Live stream and downloads, which cannot send headers. Requests made here
+      // carry the header instead, so drop the copy in the URL where server and proxy access logs would record it.
+      params: req.params.delete('token'),
     }),
   );
 };

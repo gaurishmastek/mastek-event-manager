@@ -1,0 +1,191 @@
+:host {
+  /* Theme tokens shared by every logs component (they inherit through the DOM). */
+  --logs-bg: #0a0a0a;
+  --logs-bg-elevated: #111111;
+  --logs-bg-hover: #1a1a1a;
+  --logs-bg-selected: #1f1f1f;
+  --logs-border: #262626;
+  --logs-border-strong: #333333;
+  --logs-text: #ededed;
+  --logs-text-muted: #a1a1a1;
+  --logs-text-faint: #6b6b6b;
+  --logs-warning: #f5a524;
+  --logs-error: #ef4444;
+  --logs-fatal: #dc2626;
+  --logs-success: #22c55e;
+  --logs-info: #3b82f6;
+  --logs-font: 'Geist', 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --logs-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  display: block;
+  height: var(--logs-page-height, 100vh);
+  background: var(--logs-bg);
+  color: var(--logs-text);
+  font-family: var(--logs-font);
+  font-size: 14px;
+}
+
+.logs-root {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--logs-border);
+  flex-shrink: 0;
+}
+
+.project {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.triangle {
+  color: var(--logs-text-faint);
+  font-size: 11px;
+}
+
+.project-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--logs-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--logs-text);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--logs-bg-hover);
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 12px 8px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--logs-error) 40%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--logs-error) 10%, transparent);
+  color: #fca5a5;
+}
+
+.btn {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--logs-border-strong);
+  border-radius: 6px;
+  background: var(--logs-bg);
+  color: var(--logs-text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  app-filter-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 20;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+  }
+}
+
+.live-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 12px 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--logs-info) 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--logs-info) 10%, transparent);
+  font-size: 13px;
+}
+
+.auto-demo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--logs-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.live-bar .btn.small {
+  height: 26px;
+  margin-left: 0;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--logs-info);
+  animation: live-pulse 1.4s ease-in-out infinite;
+}
+
+.live-bar.connecting .live-dot,
+.live-bar.reconnecting .live-dot {
+  background: var(--logs-warning);
+}
+
+.live-bar.failed {
+  border-color: color-mix(in srgb, var(--logs-error) 45%, transparent);
+  background: color-mix(in srgb, var(--logs-error) 10%, transparent);
+}
+
+.live-bar.failed .live-dot {
+  background: var(--logs-error);
+  animation: none;
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--logs-info) 70%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}

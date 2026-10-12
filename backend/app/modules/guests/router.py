@@ -1,5 +1,6 @@
 """Public registration endpoints. No login: employees prove who they are with an OTP sent to their email."""
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
@@ -32,6 +33,8 @@ from app.modules.notifications.email import EmailSender, get_email_sender
 from app.modules.otp.service import OtpInvalidError, OtpService, OtpThrottledError, OtpUnavailableError
 
 router = APIRouter(prefix="/public", tags=["public: guest registration"])
+
+logger = logging.getLogger(__name__)
 
 UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 EventPublicId = Annotated[str, Path(pattern=UUID_PATTERN)]
@@ -135,18 +138,22 @@ def register_employee(
     """Start a registration for an employee and their guests (or resume a pending one) and email an OTP."""
     _no_store(response)
     try:
-        return _otp_sent(service.register(event_public_id, data, ip=_client_ip(request)))
+        sent = _otp_sent(service.register(event_public_id, data, ip=_client_ip(request)))
     except _SERVICE_ERRORS as exc:
         raise _to_http(exc) from exc
+    logger.info("Registration started for event %s, code emailed", event_public_id)
+    return sent
 
 
 @router.post("/registrations/{registration_id}/otp", response_model=OtpSent, status_code=status.HTTP_202_ACCEPTED)
 def resend_otp(registration_id: RegistrationId, request: Request, response: Response, service: Service) -> OtpSent:
     _no_store(response)
     try:
-        return _otp_sent(service.resend_otp(registration_id, ip=_client_ip(request)))
+        sent = _otp_sent(service.resend_otp(registration_id, ip=_client_ip(request)))
     except _SERVICE_ERRORS as exc:
         raise _to_http(exc) from exc
+    logger.info("Code re-sent for registration %s", registration_id)
+    return sent
 
 
 @router.post("/registrations/{registration_id}/verify", response_model=GuestPass | AttendanceDeclined)
@@ -163,6 +170,7 @@ def verify_otp(
         raise _to_http(exc) from exc
     registration = issued.registration
     if isinstance(issued, DeclineRecorded):
+        logger.info("Registration %s verified: employee will not attend", registration.public_id)
         return AttendanceDeclined(
             registration_id=registration.public_id,
             employee_id=registration.employee_id,
@@ -170,6 +178,7 @@ def verify_otp(
             event=PublicEventRead.model_validate(issued.event),
             verified_at=registration.verified_at,
         )
+    logger.info("Registration %s verified: QR pass issued", registration.public_id)
     return GuestPass(
         registration_id=registration.public_id,
         status=registration.status,
