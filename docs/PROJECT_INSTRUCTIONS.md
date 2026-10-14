@@ -27,7 +27,7 @@ a QR pass is issued, and a security officer scans that pass at the gate to recor
 | Registration links, employee + guest registration, OTP, QR pass | Implemented — `app/modules/guests`, `app/modules/otp`: events have a random `public_id` link (`/register/{public_id}`), one QR pass per employee party, admin registrations list/XLSX export, permitted admin corrections and verified-pass QR download (no OTP action) |
 | Gate scanning / check-in | Implemented — `app/modules/gate`; frontend officer sign-in, assigned-event list and camera scanner (`frontend/src/app/gate`) |
 | Security officer management | Implemented — admin page `/admin/events/:id/security` (create, assign, unassign) over `/users` and `/events/{id}/officers` |
-| Admin login, officer login, sessions | Implemented — `app/modules/auth`, `app/modules/users`: admin password + email code, officer email code, JWT access tokens, logout. No refresh tokens yet. |
+| Admin login, officer login, sessions | Implemented — `app/modules/auth`, `app/modules/users`: admin password + email code, officer email + password, JWT access tokens, logout. No refresh tokens yet. |
 
 See [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md), [`docs/BUSINESS_RULES.md`](./BUSINESS_RULES.md),
 [`docs/DATABASE.md`](./DATABASE.md), [`docs/RBAC.md`](./RBAC.md), [`docs/API.md`](./API.md),

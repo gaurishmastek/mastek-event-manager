@@ -12,10 +12,6 @@ class _Input(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class _EmailInput(_Input):
-    email: EmailStr
-
-
 class LoginRequest(_Input):
     email: EmailStr
     password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)
@@ -31,16 +27,9 @@ class LoginVerifyRequest(_Input):
     code: str = OTP_CODE
 
 
-class OfficerOtpRequest(_EmailInput):
-    pass
-
-
-class OfficerOtpSent(BaseModel):
-    resend_available_at: datetime
-
-
-class OfficerVerifyRequest(_EmailInput):
-    code: str = OTP_CODE
+class OfficerLoginRequest(_Input):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)
 
 
 class SessionUser(BaseModel):

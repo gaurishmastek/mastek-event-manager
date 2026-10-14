@@ -11,9 +11,10 @@ PASSWORD_MAX_LENGTH = 128
 
 
 class UserCreate(BaseModel):
-    """A staff account. Admins sign in with a password plus an emailed code; officers with an emailed code only.
+    """A staff account. Admins sign in with a password plus an emailed code; officers with email and password.
 
-    The mobile is optional contact info; codes always go to the email address.
+    An officer created without a password gets DEFAULT_OFFICER_PASSWORD. The mobile is optional contact info; codes
+    always go to the email address.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -48,8 +49,6 @@ class UserCreate(BaseModel):
     def password_matches_role(self) -> Self:
         if self.role == Role.ADMIN and self.password is None:
             raise ValueError("admins need a password")
-        if self.role == Role.SECURITY_OFFICER and self.password is not None:
-            raise ValueError("security officers sign in with an emailed code and do not have a password")
         return self
 
 

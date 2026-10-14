@@ -1,9 +1,9 @@
 """Staff sign-in.
 
 - Admins: email and password (with lockout), then a 6-digit code emailed to their account address.
-- Security officers: a 6-digit code emailed to their account address. No password.
+- Security officers: email and password (with the same lockout), no code. New officers get DEFAULT_OFFICER_PASSWORD.
 
-Codes go through `OtpService`, so they share its expiry, attempt limit, resend cooldown, per-address and
+Admin codes go through `OtpService`, so they share its expiry, attempt limit, resend cooldown, per-address and
 per-IP caps and the daily email budget.
 """
 
@@ -24,15 +24,14 @@ from app.core.security import (
 )
 from app.db.mixins import utcnow
 from app.modules.auth.schemas import SessionResponse, SessionUser
-from app.modules.otp.service import OtpInvalidError, OtpService, OtpThrottledError
+from app.modules.otp.service import OtpInvalidError, OtpService
 from app.modules.users.models import Role, User
 from app.modules.users.service import get_active_user_by_email, get_user
 
 ADMIN_2FA = "ADMIN_2FA"
-OFFICER_LOGIN = "OFFICER_LOGIN"
 
 # One message for every failure so the response never reveals whether an email is registered,
-# whether the account is locked, disabled, or not an admin.
+# whether the account is locked, disabled, or has a different role.
 INVALID_LOGIN = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
     detail="Invalid email or password",
@@ -50,7 +49,7 @@ class AuthService:
 
     def start_admin_login(self, email: str, password: str, *, ip: str | None) -> tuple[str, datetime]:
         """Check the password and email a code. Returns the challenge id to redeem with the code."""
-        user = self._check_password(email, password)
+        user = self._check_password(email, password, Role.ADMIN)
         nonce = secrets.token_urlsafe(16)
         issued = self.otp.issue(purpose=ADMIN_2FA, subject_ref=_admin_ref(user.id, nonce), email=user.email, ip=ip)
         self.db.commit()
@@ -66,32 +65,10 @@ class AuthService:
         self._verify_code(ADMIN_2FA, _admin_ref(user.id, claims["nonce"]), code)
         return self._start_session(user)
 
-    # --- security officer: emailed code only--------------------------------------------------
+    # --- security officer: email and password------------------------------------------------
 
-    def send_officer_code(self, email: str, *, ip: str | None) -> datetime:
-        """Email a code to a registered officer. Unknown addresses get the same answer and no email.
-
-        A throttled request is answered like any other, with a later `resend_available_at` and no email: only real
-        officers can be throttled, so a 429 would tell a caller which addresses belong to officers.
-        """
-        officer = self._officer_by_email(email)
-        if officer is None:
-            return utcnow() + timedelta(seconds=get_settings().otp_resend_cooldown_seconds)
-        try:
-            issued = self.otp.issue(
-                purpose=OFFICER_LOGIN, subject_ref=_officer_ref(officer.id), email=officer.email, ip=ip
-            )
-        except OtpThrottledError as exc:
-            self.db.rollback()
-            return utcnow() + timedelta(seconds=exc.retry_after)
-        self.db.commit()
-        return issued.resend_available_at
-
-    def finish_officer_login(self, email: str, code: str) -> SessionResponse:
-        officer = self._officer_by_email(email)
-        if officer is None:
-            raise INVALID_CODE
-        self._verify_code(OFFICER_LOGIN, _officer_ref(officer.id), code)
+    def officer_login(self, email: str, password: str) -> SessionResponse:
+        officer = self._check_password(email, password, Role.SECURITY_OFFICER)
         return self._start_session(officer, minutes=get_settings().officer_session_minutes)
 
     # --- shared -------------------------------------------------------------------------------
@@ -100,12 +77,12 @@ class AuthService:
         user.session_version += 1
         self.db.commit()
 
-    def _check_password(self, email: str, password: str) -> User:
+    def _check_password(self, email: str, password: str, role: Role) -> User:
         settings = get_settings()
         user = get_active_user_by_email(self.db, email)
         now = utcnow()
 
-        if user is None or user.role != Role.ADMIN:
+        if user is None or user.role != role:
             verify_password(password, None)
             raise INVALID_LOGIN
 
@@ -130,12 +107,6 @@ class AuthService:
             user.password_hash = hash_password(password)
         return user
 
-    def _officer_by_email(self, email: str) -> User | None:
-        user = get_active_user_by_email(self.db, email)
-        if user is None or not user.is_active or user.role != Role.SECURITY_OFFICER:
-            return None
-        return user
-
     def _verify_code(self, purpose: str, subject_ref: str, code: str) -> None:
         try:
             self.otp.verify(purpose=purpose, subject_ref=subject_ref, code=code)
@@ -155,7 +126,3 @@ class AuthService:
 
 def _admin_ref(user_id: int, nonce: str) -> str:
     return f"admin:{user_id}:{nonce}"
-
-
-def _officer_ref(user_id: int) -> str:
-    return f"officer:{user_id}"

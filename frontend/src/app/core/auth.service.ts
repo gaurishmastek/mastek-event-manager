@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { environment } from '../../environments/environment';
-import type { CurrentUser, OfficerOtpSent, StaffSession } from './models';
+import type { CurrentUser, StaffSession } from './models';
 
 /**
  * Talks to the staff auth endpoints in `backend/app/modules/auth/router.py` (`POST /auth/...`).
@@ -35,17 +35,9 @@ export class AuthService {
     });
   }
 
-  /** Officer login step 1: email an OTP to a pre-registered address. */
-  requestOfficerOtp(email: string) {
-    return this.http.post<OfficerOtpSent>(`${this.base}/auth/officer/otp`, { email });
-  }
-
-  /** Officer login step 2: verify the OTP and get a shift-bound session. */
-  verifyOfficerOtp(email: string, code: string) {
-    return this.http.post<StaffSession>(`${this.base}/auth/officer/verify`, {
-      email,
-      code,
-    });
+  /** Officer login: email and password; returns a shift-bound session. */
+  officerLogin(email: string, password: string) {
+    return this.http.post<StaffSession>(`${this.base}/auth/officer/login`, { email, password });
   }
 
   applySession(res: Pick<StaffSession, 'access_token' | 'user'>): void {

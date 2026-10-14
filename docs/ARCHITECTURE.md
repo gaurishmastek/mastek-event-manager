@@ -13,7 +13,7 @@ backend/app/
   core/       settings, crypto, email helpers — shared by every module
   db/         SQLAlchemy base, audit/soft-delete mixin, session factory
   modules/
-    auth/     staff sign-in (admin password + email code, officer email code), tokens, role dependencies
+    auth/     staff sign-in (admin password + email code, officer email + password), tokens, role dependencies
     users/    staff accounts (admins and security officers)
     events/   event CRUD, officer-to-event scoping
     guests/   public employee registration (by event public_id), accompanying guests, OTP verification,
@@ -56,7 +56,7 @@ mode and streamed from a spooled file so larger events do not retain the whole w
 
 ## Frontend gate area
 
-`frontend/src/app/gate/`: `officer-login` (email code), `assigned-events` (`GET /events`, already officer-scoped),
+`frontend/src/app/gate/`: `officer-login` (email + password), `assigned-events` (`GET /events`, already officer-scoped),
 and `scanner`. Browser capabilities the scanner needs (secure context, `getUserMedia`, QR decoder, vibration) sit
 behind the `SCANNER_PLATFORM` injection token in `gate/camera.ts`, so the component is testable without a camera and
 the decoder can be swapped: native `BarcodeDetector` first, `@zxing/browser` (lazy-loaded chunk) otherwise. Decoding

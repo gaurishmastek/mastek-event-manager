@@ -1,4 +1,4 @@
-"""SMTP failures on each OTP delivery path: guest registration, admin 2FA and officer sign-in.
+"""SMTP failures on each OTP delivery path: guest registration and admin 2FA. Officer sign-in sends no email.
 
 The real `SmtpEmailSender` runs against a fake `smtplib`, so these cover everything up to the network: the API answers
 a generic 503, nothing from the failed attempt is saved (no challenge, no registration), the attempt does not use up a
@@ -16,6 +16,7 @@ from app.main import app
 from app.modules.guests.models import Registration
 from app.modules.notifications.email import SmtpEmailSender, get_email_sender
 from app.modules.otp.models import OtpChallenge
+from tests.conftest import OFFICER_PASSWORD
 from tests.conftest import PASSWORD as ADMIN_PASSWORD
 from tests.guest_fixtures import FakeMailbox
 
@@ -107,22 +108,6 @@ def test_admin_second_factor_rolls_back_and_answers_503(client, failing_smtp, ad
     assert client.post("/api/v1/auth/login", json={"email": admin.email, "password": ADMIN_PASSWORD}).status_code == 200
 
 
-def test_officer_code_rolls_back_and_answers_503(client, failing_smtp, officer, db, otp_limits):
-    otp_limits(otp_max_per_email_per_hour=1)
-
-    response = client.post("/api/v1/auth/officer/otp", json={"email": officer.email})
-
-    assert response.status_code == 503
-    assert response.json() == {"detail": "The code could not be sent. Please try again later."}
-    db.rollback()
-    assert db.scalars(select(OtpChallenge)).all() == []
-    assert_logs_are_safe(failing_smtp, officer.email)
-
-    mailbox = use_working_mailbox()
-    assert client.post("/api/v1/auth/officer/otp", json={"email": officer.email}).status_code == 202
-    assert len(mailbox.sent) == 1
-
-
 def test_disabled_provider_answers_503_on_every_path(client, admin, officer, register, make_event, monkeypatch):
     from app.modules.notifications import email as email_module
 
@@ -131,4 +116,6 @@ def test_disabled_provider_answers_503_on_every_path(client, admin, officer, reg
 
     assert register(make_event().id).status_code == 503
     assert client.post("/api/v1/auth/login", json={"email": admin.email, "password": ADMIN_PASSWORD}).status_code == 503
-    assert client.post("/api/v1/auth/officer/otp", json={"email": officer.email}).status_code == 503
+    # Officers sign in with a password, so an email outage does not keep them off the gate.
+    officer_body = {"email": officer.email, "password": OFFICER_PASSWORD}
+    assert client.post("/api/v1/auth/officer/login", json=officer_body).status_code == 200

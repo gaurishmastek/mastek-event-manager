@@ -12,7 +12,8 @@ Staff sign in through `app/modules/auth` (see [`API.md`](./API.md#staff-auth--ap
 
 - **Admin**: email and password (Argon2id, lockout after repeated failures), then a 6-digit code
   emailed to their account email.
-- **Security officer**: a 6-digit code emailed to their account email. Officers have no password.
+- **Security officer**: email and password (Argon2id, same lockout as admins). No code is emailed. Officers created
+  without a password get `DEFAULT_OFFICER_PASSWORD` (default `admin@123`), stored only as a hash.
 
 Both steps return a short-lived JWT access token. `get_current_user()` re-reads the user on every
 request, so deactivation, deletion or a role change applies immediately, and `POST /auth/logout`
@@ -20,18 +21,21 @@ bumps the user's `session_version`, revoking every earlier token.
 
 - Passwords: Argon2id via `argon2-cffi`, rehashed on login when parameters change; at least 12
   characters, not all letters or all digits.
-- Password step: one generic `401` for unknown email, wrong password, locked, disabled or
-  non-admin accounts, and a dummy hash check so unknown emails take the same time. The account
+- Password step (admin and officer alike): one generic `401` for unknown email, wrong password, locked, disabled or
+  wrong-role accounts, and a dummy hash check so unknown emails take the same time. The account
   locks for `LOCKOUT_MINUTES` after `MAX_FAILED_LOGIN_ATTEMPTS` wrong passwords.
 - The `challenge_id` from the password step is a signed token of a different type from an access
   token, so it cannot be used as one, and it is only redeemable with that login's email code.
 - Staff emails are the primary sign-in destination; staff mobiles are optional contact info only (stored as HMAC + Fernet-encrypted).
-- `POST /auth/officer/otp` answers `202` with the same body for unknown, inactive, deleted and admin addresses and
-  sends nothing to them. A throttled request for a real officer also gets `202` (with a later
-  `resend_available_at`) rather than a `429`, since only real officers can be throttled and a `429` would reveal the
-  account. An email outage still returns `503` for a real officer, which does reveal the account while the mail
-  provider is down or the daily budget is spent.
-- The officer sign-in page keeps the code only in component memory: it is not put in the URL, browser storage or logs.
+- `POST /auth/officer/login` checks the password with the same rules and lockout as the admin password step and
+  starts a shift-long session. There is no per-IP cap on it (the old emailed-code flow had one through `OtpService`);
+  the per-account lockout is the brute-force control.
+- **Known weakness: shared default officer password.** Every officer created without a password, and every existing
+  officer after migration `20261014_0009`, has the same password (`DEFAULT_OFFICER_PASSWORD`, default `admin@123`).
+  Anyone who learns it and an officer's email can sign in as that officer. Set `DEFAULT_OFFICER_PASSWORD` to a
+  stronger value in production; forcing a password change on first login is a planned follow-up.
+- The officer sign-in page keeps the password only in component memory and clears it after each attempt: it is not put
+  in the URL, browser storage or logs.
 - Deny by default: only routes in `app/main.py::PUBLIC_ROUTES` answer without a token, enforced by
   `tests/test_app.py`.
 

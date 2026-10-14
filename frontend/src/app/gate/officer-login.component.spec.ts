@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { environment } from '../../environments/environment';
 import { AuthService } from '../core/auth.service';
-import { CODE_SENT_MESSAGE, OfficerLoginComponent } from './officer-login.component';
+import { OfficerLoginComponent } from './officer-login.component';
 
 const API = environment.apiBaseUrl;
 
@@ -31,11 +31,6 @@ describe('OfficerLoginComponent', () => {
     fixture.detectChanges();
   }
 
-  function inSeconds(seconds: number): string {
-    // The backend sends naive UTC.
-    return new Date(Date.now() + seconds * 1000).toISOString().replace('Z', '');
-  }
-
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [OfficerLoginComponent],
@@ -50,90 +45,68 @@ describe('OfficerLoginComponent', () => {
 
   afterEach(() => http.verify());
 
-  it('never asks for an event id or a password', () => {
+  it('asks for email and password, and never for an event id or a code', () => {
     expect(el('#event-id')).toBeNull();
-    expect(el('input[type="password"]')).toBeNull();
+    expect(el('#officer-code')).toBeNull();
+    expect(el<HTMLInputElement>('#officer-password').type).toBe('password');
+    expect(el<HTMLInputElement>('#officer-password').getAttribute('autocomplete')).toBe('current-password');
   });
 
-  it('shows the same confirmation for any address and then asks for a 6-digit code', async () => {
-    await type('#officer-email', 'someone@example.com');
-    component.requestOtp();
-    const req = http.expectOne(`${API}/auth/officer/otp`);
-    expect(req.request.body).toEqual({ email: 'someone@example.com' });
-    req.flush({ resend_available_at: inSeconds(60) }, { status: 202, statusText: 'Accepted' });
-    fixture.detectChanges();
-
-    expect(el('[data-testid="code-sent"]').textContent).toContain(CODE_SENT_MESSAGE);
-    const code = el<HTMLInputElement>('#officer-code');
-    expect(code.getAttribute('inputmode')).toBe('numeric');
-    expect(code.getAttribute('autocomplete')).toBe('one-time-code');
+  it('keeps Sign in disabled until a valid email and a password are entered', async () => {
+    const button = () => el<HTMLButtonElement>('button[type="submit"]');
+    expect(button().disabled).toBeTrue();
+    await type('#officer-email', 'officer@example.com');
+    expect(button().disabled).toBeTrue();
+    await type('#officer-password', 'admin@123');
+    expect(button().disabled).toBeFalse();
   });
 
-  it('keeps resend disabled until the server cooldown passes', async () => {
-    component.email.set('officer@example.com');
-    component.requestOtp();
-    http.expectOne(`${API}/auth/officer/otp`).flush({ resend_available_at: inSeconds(45) });
-    fixture.detectChanges();
-
-    const resend = el<HTMLButtonElement>('[data-testid="resend"]');
-    expect(resend.disabled).toBeTrue();
-    expect(resend.textContent).toMatch(/Resend in (44|45)s/);
-    component.resendOtp();
-    http.expectNone(`${API}/auth/officer/otp`);
-
-    component.now.set(Date.now() + 46_000);
-    fixture.detectChanges();
-    expect(resend.disabled).toBeFalse();
-    component.resendOtp();
-    http.expectOne(`${API}/auth/officer/otp`).flush({ resend_available_at: inSeconds(60) });
-  });
-
-  it('accepts digits only and signs in to the assigned-event list without going back to login', async () => {
+  it('signs in to the assigned-event list, sending the password only in the body', async () => {
     const navigate = spyOn(router, 'navigateByUrl').and.resolveTo(true);
-    component.email.set('officer@example.com');
-    component.requestOtp();
-    http.expectOne(`${API}/auth/officer/otp`).flush({ resend_available_at: inSeconds(60) });
-    fixture.detectChanges();
+    await type('#officer-email', ' officer@example.com ');
+    await type('#officer-password', 'admin@123');
+    component.signIn();
 
-    component.onCodeInput('12a3-456789');
-    expect(component.code()).toBe('123456');
-    component.verifyOtp();
-    const req = http.expectOne(`${API}/auth/officer/verify`);
-    expect(req.request.body).toEqual({ email: 'officer@example.com', code: '123456' });
-    expect(req.request.urlWithParams).not.toContain('123456');
+    const req = http.expectOne(`${API}/auth/officer/login`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ email: 'officer@example.com', password: 'admin@123' });
+    expect(req.request.urlWithParams).not.toContain('admin@123');
     req.flush({ access_token: 't', token_type: 'bearer', expires_in: 28800, user: { id: 5, role: 'security_officer', name: 'Ravi' } });
 
     expect(TestBed.inject(AuthService).currentUser()?.role).toBe('security_officer');
     expect(navigate).toHaveBeenCalledWith('/gate/events', { replaceUrl: true });
-    expect(component.code()).toBe('');
+    expect(component.password()).toBe('');
   });
 
-  it('explains wrong/expired codes, throttling and outages', () => {
+  it('shows one message for a wrong password, unknown email or locked account, and clears the password', () => {
     component.email.set('officer@example.com');
-    component.step.set('otp');
-    component.code.set('000000');
-    component.verifyOtp();
-    http.expectOne(`${API}/auth/officer/verify`).flush({ detail: 'x' }, { status: 400, statusText: 'Bad Request' });
-    expect(component.errorMessage()).toContain('incorrect, has expired, or has been tried too many times');
+    component.password.set('wrong');
+    component.signIn();
+    http.expectOne(`${API}/auth/officer/login`).flush({ detail: 'x' }, { status: 401, statusText: 'Unauthorized' });
 
-    component.changeEmail();
-    component.requestOtp();
-    http
-      .expectOne(`${API}/auth/officer/otp`)
-      .flush({ detail: 'x' }, { status: 429, statusText: 'Too Many', headers: { 'Retry-After': '120' } });
-    expect(component.errorMessage()).toContain('Try again in 2 minutes');
-
-    component.requestOtp();
-    http.expectOne(`${API}/auth/officer/otp`).flush({ detail: 'x' }, { status: 503, statusText: 'Unavailable' });
-    expect(component.errorMessage()).toContain('cannot be sent right now');
+    expect(component.errorMessage()).toContain('Incorrect email or password');
+    expect(component.password()).toBe('');
+    expect(component.submitting()).toBeFalse();
   });
 
-  it('does not verify an incomplete code', () => {
+  it('explains a network failure', () => {
     component.email.set('officer@example.com');
-    component.step.set('otp');
-    component.onCodeInput('123');
-    component.verifyOtp();
-    http.expectNone(`${API}/auth/officer/verify`);
-    expect(component.errorMessage()).toContain('6-digit');
+    component.password.set('admin@123');
+    component.signIn();
+    http.expectOne(`${API}/auth/officer/login`).error(new ProgressEvent('error'), { status: 0 });
+    expect(component.errorMessage()).toContain('Could not reach the server');
+  });
+
+  it('does not send an invalid email or an empty password', () => {
+    component.email.set('not-an-email');
+    component.password.set('admin@123');
+    component.signIn();
+    expect(component.errorMessage()).toContain('valid email');
+
+    component.email.set('officer@example.com');
+    component.password.set('');
+    component.signIn();
+    expect(component.errorMessage()).toContain('password');
+    http.expectNone(`${API}/auth/officer/login`);
   });
 });

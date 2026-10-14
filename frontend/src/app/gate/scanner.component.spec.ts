@@ -276,16 +276,22 @@ describe('ScannerComponent', () => {
     http.expectNone(`${API}/gate/events/3/entries?limit=10&offset=0`);
   });
 
-  it('keeps Approve disabled until the employee ID is ticked, then admits those ticked with the server time', () => {
+  it('pre-ticks every guest on the pass but keeps Approve disabled until the employee ID is ticked', () => {
     component.gate.set('Gate 2');
     scanPass();
 
+    expect(input('guest-11').checked).toBeTrue();
+    expect(input('guest-12').checked).toBeTrue();
+    expect(input('employee-checked').checked).toBeFalse();
     expect((el('[data-testid="approve"]') as HTMLButtonElement).disabled).toBeTrue();
-    expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 0 now · 0 of 3 inside');
+    expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 2 now · 2 of 3 inside');
 
     click('employee-checked');
-    click('guest-11');
     expect((el('[data-testid="approve"]') as HTMLButtonElement).disabled).toBeFalse();
+    expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 3 now · 3 of 3 inside');
+
+    click('guest-12');
+    expect(input('guest-12').checked).toBeFalse();
     expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 2 now · 2 of 3 inside');
 
     click('approve');
@@ -310,7 +316,6 @@ describe('ScannerComponent', () => {
 
   it('refreshes the recent entries after an approval and ignores the same pass for 3 seconds', () => {
     scanPass(LATE);
-    click('guest-12');
     click('approve');
     http.expectOne(`${API}/gate/events/3/decision`).flush(ADMITTED);
     flushEntries();
@@ -322,10 +327,10 @@ describe('ScannerComponent', () => {
     http.expectOne(`${API}/gate/events/3/scan`).flush(PENDING);
   });
 
-  it('can untick a guest again, and the employee alone can be admitted', () => {
+  it('can untick every guest, and the employee alone can be admitted', () => {
     scanPass();
     click('employee-checked');
-    click('guest-12');
+    click('guest-11');
     click('guest-12');
     expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 1 now');
 
@@ -347,11 +352,15 @@ describe('ScannerComponent', () => {
     expect(input('guest-11').disabled).toBeTrue();
     expect(el('[data-testid="member-entered-at"]')?.textContent).toContain('6:35 PM');
     expect(input('guest-12').disabled).toBeFalse();
-    expect((el('[data-testid="approve"]') as HTMLButtonElement).disabled).toBeTrue();
-    expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 0 now · 2 of 3 inside');
+    // The guest still to arrive is pre-ticked, so the officer can approve straight away.
+    expect(input('guest-12').checked).toBeTrue();
+    expect((el('[data-testid="approve"]') as HTMLButtonElement).disabled).toBeFalse();
+    expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 1 now · 3 of 3 inside');
 
     click('guest-12');
-    expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 1 now · 3 of 3 inside');
+    expect((el('[data-testid="approve"]') as HTMLButtonElement).disabled).toBeTrue();
+    expect(el('[data-testid="entering-count"]')?.textContent).toContain('Letting in 0 now · 2 of 3 inside');
+    click('guest-12');
     click('approve');
 
     const req = http.expectOne(`${API}/gate/events/3/decision`);
@@ -448,7 +457,6 @@ describe('ScannerComponent', () => {
 
   it('shows the pass as it now stands when guests were already let in elsewhere', () => {
     scanPass(LATE);
-    click('guest-12');
     click('approve');
     http.expectOne(`${API}/gate/events/3/decision`).flush({ ...LATE, result: 'guests_already_entered' });
     render();
@@ -467,7 +475,7 @@ describe('ScannerComponent', () => {
     expect(el('[data-testid="scan-result"]')?.getAttribute('data-kind')).toBe('session_expired');
   });
 
-  it('clears the ticks when the next pass is scanned', () => {
+  it('resets the ticks when the next pass is scanned: ID check cleared, every guest ticked again', () => {
     scanPass();
     click('employee-checked');
     click('guest-11');
@@ -476,7 +484,7 @@ describe('ScannerComponent', () => {
     scanPass(PENDING, 'Zzz_999-yyy_888-XXX_777-www_666');
 
     expect(input('employee-checked').checked).toBeFalse();
-    expect(input('guest-11').checked).toBeFalse();
+    expect(input('guest-11').checked).toBeTrue();
   });
 
   it('sends one request however many frames show the same pass, until "Scan next guest"', () => {

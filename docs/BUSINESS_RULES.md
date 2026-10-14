@@ -187,11 +187,12 @@ file calls out where current code differs from that spec.
 
 ## Security officers (`app/modules/users`, `app/modules/events`, frontend `/admin/events/:id/security`)
 
-- Admins create officers (full name, email, optional Indian mobile, role `security_officer`, no password) and assign
+- Admins create officers (full name, email, optional Indian mobile, role `security_officer`; no password needed, they get the default officer password) and assign
   them to one or more events. Creating from the event's security page assigns the new officer to that event straight
   away; if the account is created but the assignment fails, the page offers to retry the assignment only.
 - An email or mobile already used by any staff account is refused (`409`).
-- Officers sign in at `/gate/login` with a code sent to their account email, then choose one of their assigned events
+- Officers sign in at `/gate/login` with their account email and password (default `admin@123`, set by
+  `DEFAULT_OFFICER_PASSWORD`), then choose one of their assigned events
   at `/gate/events` and scan at `/gate/scan/:eventId`. They always choose the event themselves; the app does not jump
   to a scanner automatically, even with one assignment.
 - Unassigning takes effect on the officer's next request: the event disappears from their list, and scanning or
@@ -209,7 +210,8 @@ file calls out where current code differs from that spec.
   further 3 seconds. Cancelling records nothing beyond the scan log.
 - Scanning shows a **Verify guest** panel: the party size, the employee's name and employee id in large type, an
   "ID checked and present" checkbox for the employee, one checkbox per accompanying guest (name, adult/kid, kid's
-  age; guests already inside are ticked, locked and show their entry time), and a live "Letting in N now · M of P
+  age; guests already inside are ticked, locked and show their entry time; every guest still to enter starts ticked so
+  the whole party can go in with one approval, and the officer unticks anyone not at the gate), and a live "Letting in N now · M of P
   inside" count. **Approve entry** stays disabled until the employee is ticked (first visit) or at least one late
   guest is ticked (later visit). **Reject entry** opens the reason choices; Other needs a note. A failed or refused
   decision keeps the panel and the ticks, and says that nobody was checked in. After a successful approval there is no
