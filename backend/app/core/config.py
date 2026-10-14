@@ -9,6 +9,8 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 # Development-only defaults. Production refuses to start while any of these is still in use.
 _DEV_SECRET_KEY = "dev-only-secret-change-me-0123456789abcdef"  # noqa: S105 - refused in production
 _DEV_PII_ENCRYPTION_KEY = "ZGV2LW9ubHktcGlpLWtleS1jaGFuZ2UtbWUtMDEyMzQ="
+# The officer password the business asked for. Weak and shared: override DEFAULT_OFFICER_PASSWORD in production.
+_DEFAULT_OFFICER_PASSWORD = "admin@123"  # noqa: S105 - documented default, stored only as a hash
 
 # backend/.env, found from this file rather than the working directory, so the backend reads the same file whether it
 # is started from backend/, the repository root or the serverless entry point. Real environment variables still win
@@ -45,6 +47,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=30, ge=1, le=24 * 60)
     # Security officers sign in once per gate shift.
     officer_session_minutes: int = Field(default=8 * 60, ge=1, le=24 * 60)
+    # Password given to every security officer account that is created without one, and applied to existing
+    # officers by migration 20261014_0009. Stored only as an Argon2 hash. Override with DEFAULT_OFFICER_PASSWORD.
+    default_officer_password: str = Field(default=_DEFAULT_OFFICER_PASSWORD, min_length=1, max_length=128)
     max_failed_login_attempts: int = Field(default=5, ge=1)
     lockout_minutes: int = Field(default=15, ge=1)
     # Comma-separated list of allowed frontend origins.
@@ -95,6 +100,11 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return _DEV_SECRET_KEY if info.field_name == "secret_key" else _DEV_PII_ENCRYPTION_KEY
         return value
+
+    @field_validator("default_officer_password", mode="before")
+    @classmethod
+    def _blank_officer_password_means_default(cls, value: object) -> object:
+        return _DEFAULT_OFFICER_PASSWORD if isinstance(value, str) and not value.strip() else value
 
     @field_validator("pii_encryption_key")
     @classmethod

@@ -61,7 +61,7 @@ requests cannot overbook an event.
 | Role               | Signs in with                                        | Can do                                                        |
 | ------------------ | ---------------------------------------------------- | ------------------------------------------------------------- |
 | `admin`            | Email and password, then a 6-digit code sent by email| Create staff accounts; manage events; assign officers         |
-| `security_officer` | A 6-digit code sent by email to their account email  | View and scan only the events they are assigned to            |
+| `security_officer` | Email and password (default `admin@123`)              | View and scan only the events they are assigned to            |
 
 Guests do not get accounts; they register through the public guest form.
 
@@ -72,11 +72,10 @@ Create the first admin with `python -m app.cli create-admin --email ... --name .
 |---|---|---|
 | POST | `/api/v1/auth/login` | Public. Admin `{email, password}`; emails a code, returns `{challenge_id, resend_available_at}` |
 | POST | `/api/v1/auth/login/verify` | Public. `{challenge_id, code}`; returns `{access_token, token_type, expires_in, user}` |
-| POST | `/api/v1/auth/officer/otp` | Public. `{email}`; same 202 answer whether or not the address belongs to an officer |
-| POST | `/api/v1/auth/officer/verify` | Public. `{email, code}`; returns a session like `/login/verify`, valid for one shift (8 hours) |
+| POST | `/api/v1/auth/officer/login` | Public. `{email, password}`; returns a session like `/login/verify`, valid for one shift (8 hours) |
 | POST | `/api/v1/auth/logout` | Signed in. Revokes every token issued to the user so far |
 | GET | `/api/v1/auth/me` | Signed in |
-| GET, POST | `/api/v1/users` | admin. Officers are created with an email and no password |
+| GET, POST | `/api/v1/users` | admin. Officers created without a password get `DEFAULT_OFFICER_PASSWORD` (default `admin@123`) |
 | GET | `/health` | Public |
 
 Sign-in codes use the same OTP service as guest registration: 5-minute expiry, 5 attempts, a resend cooldown, caps

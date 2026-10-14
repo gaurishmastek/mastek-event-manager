@@ -31,7 +31,8 @@ Key variables:
 | `EMAIL_PROVIDER` | `disabled` | `disabled` \| `console` \| `smtp` \| `mailtrap`. `console` prints OTPs to stdout and is refused in production. With `smtp`: set `EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT` (default 587), `SMTP_SECURITY` (`starttls`, `ssl`, or `none`), `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_TIMEOUT_SECONDS` (default 10). With `mailtrap`: set `EMAIL_FROM` and `MAILTRAP_API_TOKEN` (secret), optionally `MAILTRAP_CATEGORY` (default `Mastek Event Manager`); see "Mailtrap" below |
 | `OTP_TTL_SECONDS`, `OTP_MAX_ATTEMPTS`, `OTP_RESEND_COOLDOWN_SECONDS`, `OTP_MAX_PER_EMAIL_PER_HOUR`, `OTP_MAX_PER_EMAIL_PER_DAY`, `OTP_MAX_PER_IP_PER_HOUR`, `EMAIL_DAILY_BUDGET` | see `config.py` | OTP/anti-abuse tuning — see [`SECURITY.md`](./SECURITY.md) |
 | `ACCESS_TOKEN_EXPIRE_MINUTES`, `OFFICER_SESSION_MINUTES` | `30`, `480` | Admin and officer session lengths |
-| `MAX_FAILED_LOGIN_ATTEMPTS`, `LOCKOUT_MINUTES` | `5`, `15` | Admin password lockout |
+| `MAX_FAILED_LOGIN_ATTEMPTS`, `LOCKOUT_MINUTES` | `5`, `15` | Admin and officer password lockout |
+| `DEFAULT_OFFICER_PASSWORD` | `admin@123` | Password given to officers created without one, and to every existing officer by migration `20261014_0009` (run `alembic upgrade head` after deploying). Stored only as an Argon2 hash. Set a stronger value in production |
 | `CORS_ORIGINS` | `http://localhost:4200` | Comma-separated frontend origins allowed to call the API |
 | `GATE_OPENS_MINUTES_BEFORE_START`, `GATE_CLOSES_HOURS_AFTER_START_IF_NO_END` | `180`, `12` | Gate scanning window — see [`BUSINESS_RULES.md`](./BUSINESS_RULES.md) |
 

@@ -9,9 +9,7 @@ from app.modules.auth.schemas import (
     LoginChallenge,
     LoginRequest,
     LoginVerifyRequest,
-    OfficerOtpRequest,
-    OfficerOtpSent,
-    OfficerVerifyRequest,
+    OfficerLoginRequest,
     SessionResponse,
 )
 from app.modules.auth.service import AuthService
@@ -64,19 +62,10 @@ def login_verify(data: LoginVerifyRequest, service: Service) -> SessionResponse:
     return service.finish_admin_login(data.challenge_id, data.code)
 
 
-@router.post("/officer/otp", response_model=OfficerOtpSent, status_code=status.HTTP_202_ACCEPTED)
-def officer_otp(data: OfficerOtpRequest, request: Request, service: Service) -> OfficerOtpSent:
-    """Officer step 1. Answers the same whether or not the address belongs to an officer."""
-    try:
-        resend_at = service.send_officer_code(data.email, ip=_client_ip(request))
-    except (OtpThrottledError, OtpUnavailableError) as exc:
-        raise _otp_http_error(exc) from exc
-    return OfficerOtpSent(resend_available_at=resend_at)
-
-
-@router.post("/officer/verify", response_model=SessionResponse)
-def officer_verify(data: OfficerVerifyRequest, service: Service) -> SessionResponse:
-    return service.finish_officer_login(data.email, data.code)
+@router.post("/officer/login", response_model=SessionResponse)
+def officer_login(data: OfficerLoginRequest, service: Service) -> SessionResponse:
+    """Security officer sign in: email and password, with the same lockout as admins. Returns a shift-long session."""
+    return service.officer_login(data.email, data.password)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

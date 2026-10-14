@@ -156,3 +156,35 @@ def test_kid_age_migration_keeps_existing_kids_without_an_age(tmp_path):
     with engine.connect() as connection:
         assert connection.execute(text("SELECT name FROM registration_guests")).scalar_one() == "Meera Patil"
     engine.dispose()
+
+
+def test_officer_password_migration_sets_the_default_for_officers_only(tmp_path):
+    from app.core.security import verify_password
+
+    url = f"sqlite:///{tmp_path / 'officers.db'}"
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(config, "20261007_0008")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        for email, role in (("admin@example.com", "admin"), ("gate@example.com", "security_officer")):
+            connection.execute(
+                text(
+                    "INSERT INTO users (email, full_name, password_hash, role, is_active, session_version, "
+                    "failed_login_attempts, locked_until, created_at, updated_at) VALUES (:email, 'X', 'old-hash', "
+                    ":role, 1, 0, 3, '2030-01-01', '2026-09-28', '2026-09-28')"
+                ),
+                {"email": email, "role": role},
+            )
+
+    command.upgrade(config, "head")
+
+    with engine.connect() as connection:
+        rows = dict(connection.execute(text("SELECT role, password_hash FROM users")).all())
+        officer = connection.execute(
+            text("SELECT failed_login_attempts, locked_until FROM users WHERE role = 'security_officer'")
+        ).one()
+    engine.dispose()
+    assert rows["admin"] == "old-hash"
+    assert verify_password("admin@123", rows["security_officer"])
+    assert tuple(officer) == (0, None)

@@ -19,7 +19,8 @@ Staff sign in through `app/modules/auth` (see [`API.md`](./API.md#staff-auth--ap
 
 - **Admin**: email and password (Argon2id, lockout after repeated failures), then a 6-digit code
   emailed to their account email.
-- **Security officer**: a 6-digit code emailed to their account email. Officers have no password.
+- **Security officer**: email and password (Argon2id, same lockout as admins). No code is emailed. Officers created
+  without a password get `DEFAULT_OFFICER_PASSWORD` (default `admin@123`), stored only as a hash.
 
 Both steps return a short-lived JWT access token. `get_current_user()` re-reads the user on every
 request, so deactivation, deletion or a role change applies immediately, and `POST /auth/logout`
@@ -64,7 +65,7 @@ An officer requesting an event (read, or gate scan/entries) they are not assigne
 | `PATCH /events/{id}/registrations/{registration_id}` (identity/contact and permitted guest correction) | ✅ | ❌ (403, even for assigned events) | — |
 | `POST /events/{id}/registrations/{registration_id}/qr` (replacement QR download) | ✅ | ❌ (403, even for assigned events) | — |
 | `GET/POST /users` (staff accounts, `?role=` filter) | ✅ | ❌ (403) | — |
-| `/auth/login`, `/auth/login/verify`, `/auth/officer/otp`, `/auth/officer/verify` | public | public | — |
+| `/auth/login`, `/auth/login/verify`, `/auth/officer/login` | public | public | — |
 | `GET /auth/me`, `POST /auth/logout` | ✅ | ✅ | — |
 | Public registration/OTP/verify endpoints (`/public/...`, by event `public_id`) | n/a | n/a | ✅, no login |
 

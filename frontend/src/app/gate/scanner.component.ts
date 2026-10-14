@@ -172,7 +172,7 @@ export class ScannerComponent {
   readonly reasons = REJECTION_REASONS;
   /** The officer compared the employee's ID card with the registered employee ID. */
   readonly employeeChecked = signal(false);
-  /** Accompanying guests ticked as present right now (never includes guests already inside). */
+  /** Accompanying guests ticked as present right now (never includes guests already inside). Pre-ticked on each scan. */
   readonly selectedGuests = signal<number[]>([]);
   readonly rejecting = signal(false);
   readonly rejectReason = signal<RejectionReason | ''>('');
@@ -493,6 +493,12 @@ export class ScannerComponent {
     const view = viewForResponse(response);
     this.resetVerification();
     this.pendingToken = awaitsDecision(view) ? token : '';
+    // Everyone on the pass who is not inside yet starts ticked, so a whole party goes in with one approval; the
+    // officer unticks anyone not at the gate. The employee's ID check is never pre-ticked: it is the officer's
+    // own confirmation that they looked at the card.
+    if (this.pendingToken) {
+      this.selectedGuests.set((view.response?.guest?.members ?? []).filter((m) => !m.entered).map((m) => m.id));
+    }
     this.showResult(view);
   }
 

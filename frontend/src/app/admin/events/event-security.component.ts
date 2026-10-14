@@ -35,8 +35,8 @@ type Field = 'fullName' | 'email' | 'mobile';
 
 /**
  * Admin page for one event's security officers (`/admin/events/:id/security`): list, assign, unassign,
- * and create a new officer who is assigned straight away. Officers have no password; they sign in with an
- * emailed code. The backend enforces the admin role on every call; the route guard is only a convenience.
+ * and create a new officer who is assigned straight away. New officers get the default officer password and sign in
+ * with email and password. The backend enforces the admin role on every call; the route guard is only a convenience.
  */
 @Component({
   selector: 'app-event-security',

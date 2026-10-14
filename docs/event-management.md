@@ -9,7 +9,7 @@ they receive a QR pass, and security officers scan that pass at the gate to reco
 
 ```text
 Admin creates event → sets capacity → public registration form → guest verifies by OTP
-→ QR pass issued → officer logs in by OTP → officer scans QR → entry recorded
+→ QR pass issued → officer logs in with email and password → officer scans QR → entry recorded
 ```
 
 Out of scope: everything in the "Explicit exclusions" list of `AGENTS.MD` (ERP, inventory,
@@ -22,7 +22,7 @@ There are two staff roles with accounts and one anonymous actor.
 | Role | How they sign in | What they can do |
 |---|---|---|
 | **Admin** | Password (Argon2id) plus a second factor (OTP or TOTP) | Everything: events, capacity, officer accounts, officer-to-event assignment, guest lists, reports, exports, audit log, manual check-in |
-| **Security officer** | OTP to a pre-registered email; no self sign-up | See and scan only the events they are assigned to |
+| **Security officer** | Email and password of a pre-registered account (default `admin@123`); no self sign-up | See and scan only the events they are assigned to |
 | **Guest** | No account. An OTP-verified session scoped to one registration | Register, verify, view or cancel their own registration and QR pass |
 
 Permission matrix (backend enforced, default deny):
@@ -145,8 +145,7 @@ FastAPI, versioned under `/api/v1`. JSON only. Errors use one envelope:
 |---|---|---|
 | `POST /auth/login` | public, rate limited | Admin email and password, then returns a 2FA challenge |
 | `POST /auth/login/verify` | public, rate limited | Admin second factor, issues tokens |
-| `POST /auth/officer/otp` | public, rate limited | Sends login OTP to a registered officer email; same response whether or not the address exists |
-| `POST /auth/officer/verify` | public, rate limited | Verifies officer OTP, issues a shift-bound session |
+| `POST /auth/officer/login` | public, account lockout | Checks officer email and password, issues a shift-bound session |
 | `POST /auth/refresh` | refresh cookie + CSRF header | Rotates the refresh session |
 | `POST /auth/logout` | staff | Revokes the session |
 | `GET /auth/me` | staff | Current user and role |

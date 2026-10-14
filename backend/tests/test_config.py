@@ -123,3 +123,8 @@ def test_app_env_file_override(monkeypatch, value, expected):
 def test_app_env_file_can_point_elsewhere(monkeypatch, tmp_path):
     monkeypatch.setenv("APP_ENV_FILE", str(tmp_path / "custom.env"))
     assert _env_file() == tmp_path / "custom.env"
+
+
+def test_blank_default_officer_password_falls_back_to_the_default():
+    assert Settings(default_officer_password="").default_officer_password == "admin@123"
+    assert Settings(default_officer_password="Gate-pass-77").default_officer_password == "Gate-pass-77"

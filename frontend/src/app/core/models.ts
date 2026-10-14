@@ -24,16 +24,12 @@ export interface StaffUser {
   last_login_at: string | null;
 }
 
-/** A security officer account. Officers sign in with an emailed code, so there is no password field. */
+/** A security officer account. Officers sign in with email and the default officer password set by the backend. */
 export interface SecurityOfficerCreate {
   email: string;
   full_name: string;
   mobile?: string | null;
   role: 'security_officer';
-}
-
-export interface OfficerOtpSent {
-  resend_available_at: string;
 }
 
 export interface StaffSession {

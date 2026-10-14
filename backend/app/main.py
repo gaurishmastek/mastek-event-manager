@@ -19,8 +19,7 @@ PUBLIC_ROUTES = frozenset(
         ("GET", "/health"),
         ("POST", f"{API_PREFIX}/auth/login"),
         ("POST", f"{API_PREFIX}/auth/login/verify"),
-        ("POST", f"{API_PREFIX}/auth/officer/otp"),
-        ("POST", f"{API_PREFIX}/auth/officer/verify"),
+        ("POST", f"{API_PREFIX}/auth/officer/login"),
         # Employee self-registration from an event's public link: no accounts, the email is proved with an OTP.
         ("GET", f"{API_PREFIX}/public/events/{{event_public_id}}"),
         ("POST", f"{API_PREFIX}/public/events/{{event_public_id}}/registrations"),

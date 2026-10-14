@@ -25,6 +25,8 @@ from app.modules.users.schemas import UserCreate  # noqa: E402
 from app.modules.users.service import create_user  # noqa: E402
 
 PASSWORD = "Correct-horse-42"
+# What officers created without a password get (DEFAULT_OFFICER_PASSWORD is unset in tests).
+OFFICER_PASSWORD = "admin@123"  # noqa: S105 - the documented default, not a secret
 
 pytest_plugins = ["tests.guest_fixtures"]
 
@@ -76,7 +78,7 @@ def last_code_for(email: str) -> str:
 
 
 def sign_in(client: TestClient, user: User):
-    """Complete sign-in for an admin (password + code) or an officer (code only). Returns the response."""
+    """Complete sign-in for an admin (password + code) or an officer (password only). Returns the response."""
     if user.role == Role.ADMIN:
         step1 = login(client, user.email)
         assert step1.status_code == 200, step1.text
@@ -84,10 +86,7 @@ def sign_in(client: TestClient, user: User):
             "/api/v1/auth/login/verify",
             json={"challenge_id": step1.json()["challenge_id"], "code": last_code_for(user.email)},
         )
-    sent_codes()
-    step1 = client.post("/api/v1/auth/officer/otp", json={"email": user.email})
-    assert step1.status_code == 202, step1.text
-    return client.post("/api/v1/auth/officer/verify", json={"email": user.email, "code": last_code_for(user.email)})
+    return client.post("/api/v1/auth/officer/login", json={"email": user.email, "password": OFFICER_PASSWORD})
 
 
 def auth_headers(client: TestClient, user: User) -> dict[str, str]:
