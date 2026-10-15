@@ -68,9 +68,9 @@ def _row_to_registration(row: dict) -> RegistrationCreate:
         )
     except (KeyError, ValidationError) as exc:
         raise ValueError(f"{employee_id}: invalid registration: {exc}") from exc
-    if len(data.accompanying_guests) != row.get("number_of_guests") or 1 + len(
-        data.accompanying_guests
-    ) != row.get("party_size"):
+    if len(data.accompanying_guests) != row.get("number_of_guests") or 1 + len(data.accompanying_guests) != row.get(
+        "party_size"
+    ):
         raise ValueError(f"{employee_id}: party count does not match guest details")
     return data
 
