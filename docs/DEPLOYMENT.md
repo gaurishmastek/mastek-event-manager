@@ -127,6 +127,27 @@ Alembic, `backend/alembic/` — see [`DATABASE.md`](./DATABASE.md) for the list.
 their passes (they count as a party of one). Every schema change must go
 through a migration; there is no `create_all()`/auto-sync path in the app itself.
 
+## Operator import of collected registrations
+
+`python -m app.cli import-verified` validates a JSON array of collected employee records in the
+format used by the existing event spreadsheet. Use `--overrides corrections.json` for explicitly
+approved corrections keyed by employee ID. With no `--apply`, it only validates and counts the
+registrations and seats. For example:
+
+```bash
+python -m app.cli import-verified --file records.json --overrides corrections.json \
+  --event-id 2 --expected-title 'RangRaas with Mastek 2026'
+```
+
+The operator-only `--apply` flag requires a production environment with the same `SECRET_KEY`
+and `PII_ENCRYPTION_KEY` as the deployed application, a reachable MySQL database, and a configured
+SMTP or Mailtrap sender. It checks the event ID and title, capacity, guest limit, and existing
+employee IDs and email addresses before inserting the entire batch in one transaction. It marks
+those rows `VERIFIED` without OTP, issues one QR pass per party, and sends each pass after commit.
+`consent_at` records the import time, so only use this command for records whose use for event
+entry has been authorized. The command reports the employee IDs of any failed pass emails;
+provider acceptance still needs delivery confirmation in the provider's logs.
+
 ## Frontend and API on Vercel
 
 `vercel.json` at the repository root defines two builds:
