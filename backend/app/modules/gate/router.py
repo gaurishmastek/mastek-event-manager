@@ -10,6 +10,7 @@ from app.modules.gate.access import GATE_ROLES, EventScopePolicy
 from app.modules.gate.models import CheckIn, GuestEntry, ScanResult
 from app.modules.gate.schemas import (
     DecisionRequest,
+    EmployeeLookupRequest,
     EntryPage,
     EntryRead,
     PartyMember,
@@ -115,6 +116,19 @@ def scan_pass(
     response.headers["Cache-Control"] = "no-store"
     try:
         outcome = service.scan(user, event_id, data.token, data.gate)
+    except GateEventNotFoundError as exc:
+        raise _not_found() from exc
+    return _scan_response(outcome)
+
+
+@router.post("/events/{event_id}/lookup-employee", response_model=ScanResponse)
+def lookup_employee(
+    event_id: EventId, data: EmployeeLookupRequest, response: Response, service: Service, user: GateUser
+) -> ScanResponse:
+    """Find the registered party by employee ID in this event. Entry still needs an officer's decision."""
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        outcome = service.lookup_employee(user, event_id, data.employee_id, data.gate)
     except GateEventNotFoundError as exc:
         raise _not_found() from exc
     return _scan_response(outcome)

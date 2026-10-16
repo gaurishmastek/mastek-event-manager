@@ -138,11 +138,12 @@ file calls out where current code differs from that spec.
 
 ## Check-in at the gate (`app/modules/gate`)
 
-- **A scan no longer admits anyone.** It only looks the pass up and shows the officer the party. People come in when
+- **A scan or employee ID lookup never admits anyone.** It only looks the registration up and shows the officer the party. People come in when
   the officer approves (`POST /gate/events/{id}/decision`). The officer is checking the employee's ID by eye; the
   system does not compare it, it records that the officer confirmed it.
-- A scan or decision is accepted only when: the token hash matches an existing registration, that
-  registration belongs to the event being scanned, the officer is admin or assigned to that
+- A scan or decision is accepted only when: the token hash matches an existing registration (QR route) or an exact,
+  case-insensitive employee ID matches a registration in the selected event (manual route), that
+  registration belongs to the selected event, the officer is admin or assigned to that
   event, and the current time is within the event's gate window. `check_ins.registration_id` is
   unique, so the database is the final guard against the employee entering twice even under a race.
 - **First visit** (registration `VERIFIED`, scan result `pending_verification`). The officer compares the employee's
@@ -177,8 +178,8 @@ file calls out where current code differs from that spec.
   assigned to the event (`404`), get no personal details. The response is always `200 OK` (apart from `422` for a
   malformed decision); only `admitted` means anyone was let in. An out-of-scope event yields `404` before an
   outcome is even produced.
-- Every scan and decision (including invalid ones) is logged in `scan_attempts`, without the raw
-  token. An approval writes the `check_ins` row (first visit) with the officer id, event id, gate, method `QR` and a
+- Every scan, employee ID lookup, and decision (including invalid ones) is logged in `scan_attempts`, without the raw
+  token or entered employee ID. An approval writes the `check_ins` row (first visit) with the officer id, event id, gate, method `QR` or `MANUAL` and a
   server-generated `checked_in_at`, and `guest_entries` rows for guests; requests cannot carry a time. Of two
   concurrent first approvals of one pass, the atomic `UPDATE ... WHERE status = 'VERIFIED'` lets exactly one win; the
   other gets the pass as it now stands (the winner's time and gate).
@@ -205,6 +206,9 @@ file calls out where current code differs from that spec.
 - QR codes are decoded on the device (native `BarcodeDetector`, or `@zxing/browser` where that is missing). Frames are
   never uploaded or stored. Only a string shaped like a pass token (`[A-Za-z0-9_-]{20,128}`) is sent; anything else is
   shown as an invalid pass without a request.
+- The manual lookup accepts an employee ID instead of QR text. It finds a registration only in the officer's selected
+  event, shows the same verification panel, and requires the same ID check and approve/reject decision. Camera QR
+  scanning still works as before.
 - One request per pass: frames are ignored while a scan is in flight and while its result is on screen; the officer
   taps "Scan next guest" (or "Cancel" while a decision is pending) to continue, and the same pass is ignored for a
   further 3 seconds. Cancelling records nothing beyond the scan log.

@@ -276,6 +276,68 @@ describe('ScannerComponent', () => {
     http.expectNone(`${API}/gate/events/3/entries?limit=10&offset=0`);
   });
 
+  it('looks up an employee ID and uses it for the existing approval flow', () => {
+    expect(el('[data-testid="employee-lookup"]')?.textContent).toContain('Look up by employee ID');
+    expect(el('[data-testid="employee-lookup"]')?.textContent).toContain('Employee ID');
+    expect(el('#manual-token')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Enter the QR pass code');
+    component.gate.set('Gate 2');
+    component.employeeId.set('E1001');
+    component.lookupEmployee();
+
+    const lookup = http.expectOne(`${API}/gate/events/3/lookup-employee`);
+    expect(lookup.request.body).toEqual({ employee_id: 'E1001', gate: 'Gate 2' });
+    lookup.flush(PENDING);
+    render();
+
+    expect(el('[data-testid="employee-id"]')?.textContent).toContain('E1001');
+    expect(input('guest-11').checked).toBeTrue();
+    expect(input('employee-checked').checked).toBeFalse();
+    click('employee-checked');
+    click('approve');
+
+    const decision = http.expectOne(`${API}/gate/events/3/decision`);
+    expect(decision.request.body).toEqual({
+      employee_id: 'E1001',
+      gate: 'Gate 2',
+      decision: 'approve',
+      employee_id_checked: true,
+      guest_ids_entered: [11, 12],
+    });
+    decision.flush(ADMITTED);
+    flushEntries();
+  });
+
+  it('validates employee IDs before making a lookup request', () => {
+    component.employeeId.set('bad id');
+    component.lookupEmployee();
+    expect(component.employeeLookupError()).toContain('valid employee ID');
+    http.expectNone(`${API}/gate/events/3/lookup-employee`);
+  });
+
+  it('sends a rejection for the employee ID that was looked up', () => {
+    component.employeeId.set('E1001');
+    component.lookupEmployee();
+    http.expectOne(`${API}/gate/events/3/lookup-employee`).flush(PENDING);
+    render();
+
+    click('reject');
+    click('reason-ID_MISMATCH');
+    click('confirm-reject');
+
+    const decision = http.expectOne(`${API}/gate/events/3/decision`);
+    expect(decision.request.body).toEqual({
+      employee_id: 'E1001',
+      gate: null,
+      decision: 'reject',
+      reason: 'ID_MISMATCH',
+      note: null,
+    });
+    decision.flush({ result: 'rejected', message: '', guest: null, checked_in_at: null, gate: null, people_entered: null });
+    render();
+    expect(el('[data-testid="scan-result"]')?.getAttribute('data-kind')).toBe('rejected');
+  });
+
   it('pre-ticks every guest on the pass but keeps Approve disabled until the employee ID is ticked', () => {
     component.gate.set('Gate 2');
     scanPass();

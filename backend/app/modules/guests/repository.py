@@ -206,10 +206,17 @@ class RegistrationRepository:
         Two officers scanning the same pass at the same moment cannot both succeed: the second
         UPDATE no longer matches `status = VERIFIED` and changes no rows.
         """
+        return self._check_in(Registration.qr_token_hash == token_hash, event_id, officer_id, at)
+
+    def check_in_by_registration(self, *, registration_id: int, event_id: int, officer_id: int, at: datetime) -> bool:
+        """Atomically admit a party found by employee ID, with the same status guard as QR admission."""
+        return self._check_in(Registration.id == registration_id, event_id, officer_id, at)
+
+    def _check_in(self, identity_filter, event_id: int, officer_id: int, at: datetime) -> bool:
         result = self.db.execute(
             update(Registration)
             .where(
-                Registration.qr_token_hash == token_hash,
+                identity_filter,
                 Registration.event_id == event_id,
                 Registration.status == RegistrationStatus.VERIFIED.value,
                 Registration.deleted_at.is_(None),

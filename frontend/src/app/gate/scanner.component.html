@@ -332,26 +332,26 @@
       </section>
     }
 
-    <details class="rounded-lg border border-border bg-background p-3">
-      <summary class="cursor-pointer text-sm font-medium">Can’t scan with this camera? Enter the pass code</summary>
-      <form class="mt-3 space-y-2" novalidate (ngSubmit)="submitManualToken()">
-        <label for="manual-token" class="block text-xs text-muted-foreground">The text inside the guest’s QR code, if it was read another way</label>
+    <details class="rounded-lg border-2 border-primary bg-primary/5 p-3" data-testid="employee-lookup">
+      <summary class="cursor-pointer text-sm font-semibold text-primary">Can’t scan? Look up by employee ID</summary>
+      <p class="mt-2 text-xs text-muted-foreground">Enter the employee ID to find the registered guest. You will still need to check their ID and approve entry.</p>
+      <form class="mt-3 space-y-2" novalidate (ngSubmit)="lookupEmployee()">
+        <label for="employee-id-lookup" class="block text-sm font-medium">Employee ID</label>
         <div class="flex gap-2">
           <input
-            id="manual-token"
-            name="manualToken"
+            id="employee-id-lookup"
+            name="employeeId"
             autocomplete="off"
-            autocapitalize="off"
-            spellcheck="false"
-            maxlength="128"
-            [ngModel]="manualToken()"
-            (ngModelChange)="manualToken.set($event)"
+            autocapitalize="characters"
+            maxlength="30"
+            [ngModel]="employeeId()"
+            (ngModelChange)="employeeId.set($event)"
             class="flex h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
-          <app-button type="submit" [loading]="submitting()" [disabled]="!manualToken().trim() || !!result()">Look up pass</app-button>
+          <app-button type="submit" [loading]="submitting()" [disabled]="!employeeId().trim() || !!result()">Look up pass</app-button>
         </div>
-        @if (manualError()) {
-          <p class="text-xs text-destructive" role="alert">{{ manualError() }}</p>
+        @if (employeeLookupError()) {
+          <p class="text-xs text-destructive" role="alert">{{ employeeLookupError() }}</p>
         }
       </form>
     </details>

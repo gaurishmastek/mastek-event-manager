@@ -8,7 +8,7 @@ import { EventsApiService } from '../core/events-api.service';
 import { GateApiService } from '../core/gate-api.service';
 import { apiErrorMessage } from '../core/http-error';
 import type {
-  DecisionRequest,
+  DecisionFields,
   EntryRead,
   EventRead,
   PartyMember,
@@ -157,8 +157,8 @@ export class ScannerComponent {
   readonly eventError = signal('');
 
   readonly gate = signal('');
-  readonly manualToken = signal('');
-  readonly manualError = signal('');
+  readonly employeeId = signal('');
+  readonly employeeLookupError = signal('');
 
   readonly cameraState = signal<CameraState>('idle');
   readonly cameraError = signal<CameraErrorKind | null>(null);
@@ -193,6 +193,7 @@ export class ScannerComponent {
   private lastTokenReleasedAt = 0;
   /** The pass awaiting a decision; kept in memory only, and sent back with the decision. */
   private pendingToken = '';
+  private pendingEmployeeId = '';
   private readonly onVisibilityChange = () => {
     // Never keep the camera running in the background.
     if (document.visibilityState === 'hidden') this.stopCamera();
@@ -347,22 +348,38 @@ export class ScannerComponent {
     this.submit(token);
   }
 
-  submitManualToken(): void {
-    this.manualError.set('');
+  lookupEmployee(): void {
+    this.employeeLookupError.set('');
     if (this.submitting() || this.result()) return;
-    const token = extractPassToken(this.manualToken());
-    if (token === null) {
-      this.manualError.set('That is not a pass code. Codes are 20–128 letters, digits, - or _.');
+    const employeeId = this.employeeId().trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,29}$/.test(employeeId)) {
+      this.employeeLookupError.set('Enter a valid employee ID (1–30 letters, digits, dots, hyphens or underscores).');
       return;
     }
-    this.manualToken.set('');
-    this.submit(token);
+    this.employeeId.set('');
+    this.submitting.set(true);
+    this.api.lookupEmployee(this.eventId, { employee_id: employeeId, gate: this.gate().trim() || null }).subscribe({
+      next: (response) => {
+        this.submitting.set(false);
+        this.showResponse('', response, employeeId);
+      },
+      error: (err) => {
+        this.submitting.set(false);
+        const view = viewForError(err);
+        this.showResult(view);
+        if (view.kind === 'not_assigned' || view.kind === 'session_expired' || view.kind === 'forbidden') {
+          this.stopCamera();
+        }
+        if (view.kind === 'session_expired') this.auth.clearSession();
+      },
+    });
   }
 
   scanNext(): void {
     this.lastTokenReleasedAt = Date.now();
     this.result.set(null);
     this.pendingToken = '';
+    this.pendingEmployeeId = '';
     this.resetVerification();
   }
 
@@ -440,11 +457,12 @@ export class ScannerComponent {
     this.decide({ decision: 'reject', reason, note: this.rejectNote().trim() || null });
   }
 
-  private decide(fields: Omit<DecisionRequest, 'token' | 'gate'>): void {
-    if (this.deciding() || !this.pendingToken) return;
+  private decide(fields: DecisionFields): void {
+    if (this.deciding() || (!this.pendingToken && !this.pendingEmployeeId)) return;
     this.deciding.set(true);
     this.decisionError.set('');
-    this.api.decide(this.eventId, { token: this.pendingToken, gate: this.gate().trim() || null, ...fields }).subscribe({
+    const identity = this.pendingEmployeeId ? { employee_id: this.pendingEmployeeId } : { token: this.pendingToken };
+    this.api.decide(this.eventId, { ...identity, gate: this.gate().trim() || null, ...fields }).subscribe({
       next: (response) => {
         this.deciding.set(false);
         if (response.result === 'admitted') {
@@ -455,7 +473,7 @@ export class ScannerComponent {
           this.loadEntries();
           return;
         }
-        this.showResponse(this.pendingToken, response);
+        this.showResponse(this.pendingToken, response, this.pendingEmployeeId);
       },
       error: (err) => {
         this.deciding.set(false);
@@ -489,14 +507,15 @@ export class ScannerComponent {
   }
 
   /** Shows a scan or decision response; a pass still awaiting a decision starts a fresh verification. */
-  private showResponse(token: string, response: ScanResponse): void {
+  private showResponse(token: string, response: ScanResponse, employeeId = ''): void {
     const view = viewForResponse(response);
     this.resetVerification();
     this.pendingToken = awaitsDecision(view) ? token : '';
+    this.pendingEmployeeId = awaitsDecision(view) ? employeeId : '';
     // Everyone on the pass who is not inside yet starts ticked, so a whole party goes in with one approval; the
     // officer unticks anyone not at the gate. The employee's ID check is never pre-ticked: it is the officer's
     // own confirmation that they looked at the card.
-    if (this.pendingToken) {
+    if (this.pendingToken || this.pendingEmployeeId) {
       this.selectedGuests.set((view.response?.guest?.members ?? []).filter((m) => !m.entered).map((m) => m.id));
     }
     this.showResult(view);
