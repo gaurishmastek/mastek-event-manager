@@ -222,8 +222,12 @@ export interface ScanRequest {
 
 export type RejectionReason = 'ID_MISMATCH' | 'ID_NOT_PRESENTED' | 'OTHER';
 
-export interface DecisionRequest {
-  token: string;
+export interface ScanLookupRequest {
+  employee_id: string;
+  gate?: string | null;
+}
+
+export interface DecisionFields {
   decision: 'approve' | 'reject';
   gate?: string | null;
   /** Required on the first approval: the officer compared the employee's ID card with the registered id. */
@@ -234,6 +238,9 @@ export interface DecisionRequest {
   /** Required when the reason is OTHER. */
   note?: string | null;
 }
+
+export type DecisionRequest = DecisionFields &
+  ({ token: string; employee_id?: never } | { employee_id: string; token?: never });
 
 export interface ScanResponse {
   result: ScanResult;

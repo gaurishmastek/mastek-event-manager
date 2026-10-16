@@ -169,7 +169,8 @@ enter through `guest_entries`, below.
 | `event_id` | int | FK → `events.id`, not null |
 | `officer_id` | int | not null — no FK yet |
 | `gate` | varchar(50) | nullable |
-| `method` | varchar(10) | default `"QR"` (no `MANUAL` entries yet — see BUSINESS_RULES.md) || `checked_in_at` | datetime | not null |
+| `method` | varchar(10) | `"QR"` for camera scans, `"MANUAL"` for employee ID lookups; default `"QR"` |
+| `checked_in_at` | datetime | not null |
 
 Index: `ix_check_ins_event_checked_in_at` on `(event_id, checked_in_at)`.
 

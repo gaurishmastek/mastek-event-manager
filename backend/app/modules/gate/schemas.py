@@ -6,6 +6,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 
 from app.modules.events.schemas import _clean_single_line
 from app.modules.gate.models import RejectionReason
+from app.modules.guests.schemas import EmployeeId
 
 # Pass tokens are URL-safe base64 from secrets.token_urlsafe(32); anything else is rejected before lookup.
 PassToken = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{20,128}$")]
@@ -28,6 +29,13 @@ class ScanRequest(BaseModel):
     gate: GateName | None = None
 
 
+class EmployeeLookupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    employee_id: EmployeeId
+    gate: GateName | None = None
+
+
 class DecisionRequest(BaseModel):
     """The officer's decision on a scanned pass.
 
@@ -38,7 +46,8 @@ class DecisionRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    token: PassToken
+    token: PassToken | None = None
+    employee_id: EmployeeId | None = None
     decision: Decision
     gate: GateName | None = None
     employee_id_checked: bool = False
@@ -48,6 +57,8 @@ class DecisionRequest(BaseModel):
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
+        if (self.token is None) == (self.employee_id is None):
+            raise ValueError("provide exactly one of token or employee_id")
         if self.decision is Decision.APPROVE:
             if self.reason is not None or self.note is not None:
                 raise ValueError("an approval cannot carry a rejection reason or note")

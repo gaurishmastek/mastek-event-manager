@@ -77,7 +77,8 @@ bumps the user's `session_version`, revoking every earlier token.
 - Gate lookups go token → hash → registration; a stolen QR image without the underlying secret
   reveals nothing about who it belongs to.
 - One pass per party. Party details (employee id and name, guest names, party size, masked email and mobile) are
-  returned only to an admin or an assigned officer, and only for `admitted` or `already_checked_in` scans.
+  returned only to an admin or an assigned officer for their selected event, and only for valid parties awaiting a
+  decision or already admitted. Manual employee ID lookup is also limited to that event and gate window.
 - The admin-only replacement-pass route is limited to verified, not-yet-checked-in registrations. It replaces the
   stored token hash atomically and returns the SVG only for immediate download; it does not email the pass.
 
@@ -88,8 +89,8 @@ bumps the user's `session_version`, revoking every earlier token.
   page, on sign-out and when the page is hidden.
 - QR decoding runs in the browser. No frame is uploaded or stored; only the decoded token is sent, after a format
   check. The QR holds nothing but the opaque token, so nothing in it is trusted: the backend decides the outcome.
-- Party details are shown only for `admitted` and `already_checked_in` responses; wrong-event, invalid, gate-closed
-  and out-of-scope scans show none.
+- Party details are shown for valid parties awaiting a decision, admitted, or already checked in; wrong-event,
+  invalid, gate-closed and out-of-scope lookups show none.
 
 ## PII handling (`app/core/crypto.py`)
 

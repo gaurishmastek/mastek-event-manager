@@ -17,6 +17,7 @@ from app.modules.gate.models import CheckIn, EntryRejection, GuestEntry, ScanAtt
 from app.modules.gate.schemas import Decision, DecisionRequest
 from app.modules.guests.models import Registration, RegistrationStatus
 from app.modules.guests.repository import RegistrationRepository
+from app.modules.guests.schemas import normalize_employee_id
 
 
 class GateEventNotFoundError(Exception):
@@ -76,6 +77,14 @@ class GateService:
         registration = self.registrations.get_by_token_hash(token_hash(token))
         return self._finish(self._state(registration, event_id), event_id, user, gate)
 
+    def lookup_employee(self, user: CurrentUser, event_id: int, employee_id: str, gate: str | None) -> ScanOutcome:
+        """Look up a party only within the officer's event, without admitting anyone."""
+        event = self.get_event(user, event_id)
+        if not self._gate_open(event):
+            return self._finish(ScanOutcome(ScanResult.GATE_CLOSED), event_id, user, gate)
+        registration = self.registrations.get_by_event_and_employee(event_id, normalize_employee_id(employee_id))
+        return self._finish(self._state(registration, event_id), event_id, user, gate)
+
     # ---- decide: approve or reject ------------------------------------------------------------
 
     def decide(self, user: CurrentUser, event_id: int, request: DecisionRequest) -> ScanOutcome:
@@ -84,8 +93,7 @@ class GateService:
         if not self._gate_open(event):
             return self._finish(ScanOutcome(ScanResult.GATE_CLOSED), event_id, user, gate)
 
-        hashed = token_hash(request.token)
-        state = self._state(self.registrations.get_by_token_hash(hashed), event_id)
+        state = self._state(self._registration_for_decision(event_id, request), event_id)
         if state.result not in (ScanResult.PENDING_VERIFICATION, ScanResult.PENDING_GUESTS):
             # Invalid, another event's, or fully used: nothing to approve or reject.
             return self._finish(state, event_id, user, gate)
@@ -108,20 +116,34 @@ class GateService:
 
         self._require_known_guests(registration, request.guest_ids_entered)
         if state.result is ScanResult.PENDING_VERIFICATION:
-            return self._admit_first(user, event_id, hashed, registration, request)
+            return self._admit_first(user, event_id, registration, request)
         return self._admit_late(user, event_id, registration, state, request)
 
+    def _registration_for_decision(self, event_id: int, request: DecisionRequest) -> Registration | None:
+        if request.token is not None:
+            return self.registrations.get_by_token_hash(token_hash(request.token))
+        return self.registrations.get_by_event_and_employee(event_id, normalize_employee_id(request.employee_id))
+
     def _admit_first(
-        self, user: CurrentUser, event_id: int, hashed: str, registration: Registration, request: DecisionRequest
+        self, user: CurrentUser, event_id: int, registration: Registration, request: DecisionRequest
     ) -> ScanOutcome:
         if not request.employee_id_checked:
             raise GateDecisionError("Check the employee's ID card and tick it before approving entry.")
 
         now = utcnow()
         gate = request.gate
-        if not self.registrations.check_in(token_hash=hashed, event_id=event_id, officer_id=user.id, at=now):
+        if request.token is not None:
+            claimed = self.registrations.check_in(
+                token_hash=token_hash(request.token), event_id=event_id, officer_id=user.id, at=now
+            )
+        else:
+            claimed = self.registrations.check_in_by_registration(
+                registration_id=registration.id, event_id=event_id, officer_id=user.id, at=now
+            )
+        if not claimed:
             # Another officer admitted this pass first; show their entry rather than admitting twice.
-            return self._finish(self._used(self.registrations.get_by_token_hash(hashed)), event_id, user, gate)
+            self.db.refresh(registration)
+            return self._finish(self._used(registration), event_id, user, gate)
 
         self.db.refresh(registration)
         check_in = CheckIn(
@@ -129,7 +151,7 @@ class GateService:
             event_id=event_id,
             officer_id=user.id,
             gate=gate,
-            method="QR",
+            method="QR" if request.token is not None else "MANUAL",
             checked_in_at=now,
             created_by=user.id,
             updated_by=user.id,
@@ -142,7 +164,7 @@ class GateService:
             # Unreachable while check_in() guards the status, but the unique indexes have the final say.
             self.db.rollback()
             return self._finish(
-                self._state(self.registrations.get_by_token_hash(hashed), event_id), event_id, user, gate
+                self._state(self._registration_for_decision(event_id, request), event_id), event_id, user, gate
             )
         outcome = ScanOutcome(ScanResult.ADMITTED, registration, check_in, self._guest_entries(registration))
         return self._finish(outcome, event_id, user, gate)
@@ -165,7 +187,7 @@ class GateService:
         except IntegrityError:
             # Another officer let one of them in at the same moment; show the pass as it now stands.
             self.db.rollback()
-            refreshed = self.registrations.get_by_token_hash(token_hash(request.token))
+            refreshed = self._registration_for_decision(event_id, request)
             outcome = ScanOutcome(
                 ScanResult.GUESTS_ALREADY_ENTERED, refreshed, check_in, self._guest_entries(refreshed)
             )
